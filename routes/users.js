@@ -106,4 +106,113 @@ router.post('/', async (req, res) => {
   }
 });
 
+// PUT /api/users/:id - Update a user
+router.put('/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { email, role, hallName, address } = req.body;
+
+    // Validate required fields
+    if (!email || !role) {
+      return res.status(400).json({ message: 'Email and role are required' });
+    }
+
+    // Validate role
+    if (!['hall_owner', 'super_admin'].includes(role)) {
+      return res.status(400).json({ message: 'Invalid role. Must be hall_owner or super_admin' });
+    }
+
+    // For hall owners, validate required fields
+    if (role === 'hall_owner') {
+      if (!hallName || !address || !address.line1 || !address.postcode || !address.state) {
+        return res.status(400).json({ 
+          message: 'Hall name and complete address (line1, postcode, state) are required for hall owners' 
+        });
+      }
+    }
+
+    // Check if user exists
+    const userDoc = await admin.firestore().collection('users').doc(id).get();
+    if (!userDoc.exists) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Prepare user data for Firestore
+    const userData = {
+      email: email,
+      role: role,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    };
+
+    // Add hall-specific data for hall owners
+    if (role === 'hall_owner') {
+      userData.hallName = hallName;
+      userData.address = {
+        line1: address.line1,
+        line2: address.line2 || '',
+        postcode: address.postcode,
+        state: address.state
+      };
+    } else {
+      // Remove hall-specific data for non-hall owners
+      userData.hallName = admin.firestore.FieldValue.delete();
+      userData.address = admin.firestore.FieldValue.delete();
+    }
+
+    // Update user data in Firestore
+    await admin.firestore().collection('users').doc(id).update(userData);
+
+    // Update email in Firebase Auth if it changed
+    const currentUser = await admin.auth().getUser(id);
+    if (currentUser.email !== email) {
+      await admin.auth().updateUser(id, { email: email });
+    }
+
+    res.json({ 
+      message: 'User updated successfully',
+      uid: id,
+      email: email,
+      role: role
+    });
+
+  } catch (error) {
+    console.error('Error updating user:', error);
+    
+    // Handle specific Firebase errors
+    if (error.code === 'auth/email-already-exists') {
+      return res.status(400).json({ message: 'Email already exists' });
+    }
+    if (error.code === 'auth/invalid-email') {
+      return res.status(400).json({ message: 'Invalid email format' });
+    }
+
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// DELETE /api/users/:id - Delete a user
+router.delete('/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Check if user exists
+    const userDoc = await admin.firestore().collection('users').doc(id).get();
+    if (!userDoc.exists) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Delete user from Firebase Auth
+    await admin.auth().deleteUser(id);
+
+    // Delete user data from Firestore
+    await admin.firestore().collection('users').doc(id).delete();
+
+    res.json({ message: 'User deleted successfully' });
+
+  } catch (error) {
+    console.error('Error deleting user:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
 module.exports = router;
