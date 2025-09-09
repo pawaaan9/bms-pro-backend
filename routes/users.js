@@ -3,6 +3,22 @@ const admin = require('../firebaseAdmin');
 
 const router = express.Router();
 
+// Middleware to verify token
+const verifyToken = async (req, res, next) => {
+  try {
+    const token = req.headers.authorization?.split(' ')[1];
+    if (!token) {
+      return res.status(401).json({ message: 'No token provided' });
+    }
+
+    const decodedToken = await admin.auth().verifyIdToken(token);
+    req.user = decodedToken;
+    next();
+  } catch (error) {
+    res.status(401).json({ message: 'Invalid token' });
+  }
+};
+
 // GET /api/users - List all users from Firestore
 router.get('/', async (req, res) => {
   try {
@@ -13,13 +29,18 @@ router.get('/', async (req, res) => {
         id: doc.id,
         email: data.email,
         role: data.role,
-        hallName: data.hallName,
+        hallName: data.hallName || (data.owner_profile?.hallName) || null,
         address: data.address ? {
           line1: data.address.line1,
           line2: data.address.line2,
           postcode: data.address.postcode,
           state: data.address.state
-        } : null
+        } : (data.owner_profile?.address ? {
+          line1: data.owner_profile.address.line1,
+          line2: data.owner_profile.address.line2,
+          postcode: data.owner_profile.address.postcode,
+          state: data.owner_profile.address.state
+        } : null)
       };
     });
     res.json(users);
@@ -211,6 +232,39 @@ router.delete('/:id', async (req, res) => {
 
   } catch (error) {
     console.error('Error deleting user:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// GET /api/users/profile - Get current user's profile
+router.get('/profile', verifyToken, async (req, res) => {
+  try {
+    const userId = req.user.uid;
+    
+    // Get user data from Firestore
+    const userDoc = await admin.firestore().collection('users').doc(userId).get();
+    
+    if (!userDoc.exists) {
+      return res.status(404).json({ message: 'User profile not found' });
+    }
+
+    const userData = userDoc.data();
+    
+    // Return user profile data
+    const profile = {
+      id: userId,
+      email: userData.email,
+      role: userData.role,
+      hallName: userData.hallName || (userData.owner_profile?.hallName) || null,
+      address: userData.address || (userData.owner_profile?.address) || null,
+      createdAt: userData.createdAt,
+      updatedAt: userData.updatedAt
+    };
+
+    res.json(profile);
+
+  } catch (error) {
+    console.error('Error fetching user profile:', error);
     res.status(500).json({ message: error.message });
   }
 });
