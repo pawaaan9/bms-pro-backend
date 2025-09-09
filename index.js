@@ -1,0 +1,55 @@
+const express = require('express');
+const cors = require('cors');
+const jwt = require('jsonwebtoken');
+const admin = require('./firebaseAdmin');
+require('dotenv').config();
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+
+// Auth routes
+const authRoutes = require('./routes/auth');
+app.use('/api', authRoutes);
+
+// Users routes
+const usersRoutes = require('./routes/users');
+app.use('/api/users', usersRoutes);
+
+// Login endpoint (returns JWT token)
+app.post('/api/login', async (req, res) => {
+  const { email, password } = req.body;
+  if (!email || !password) {
+    return res.status(400).json({ message: 'Missing fields' });
+  }
+  try {
+    // Firebase Admin SDK does not support password login directly
+    // This should be handled on the frontend with Firebase JS SDK
+    // Here, we just fetch the user and their role
+    const user = await admin.auth().getUserByEmail(email);
+    const userDoc = await admin.firestore().collection('users').doc(user.uid).get();
+    if (!userDoc.exists) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    const userData = userDoc.data();
+    
+    // Create JWT token
+    const token = jwt.sign(
+      { 
+        uid: user.uid, 
+        email: user.email, 
+        role: userData.role 
+      },
+      process.env.JWT_SECRET || 'your-secret-key',
+      { expiresIn: '24h' }
+    );
+    
+    res.json({ token, role: userData.role });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
