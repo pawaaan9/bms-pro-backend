@@ -6,15 +6,33 @@ const router = express.Router();
 // Middleware to verify token
 const verifyToken = async (req, res, next) => {
   try {
-    const token = req.headers.authorization?.split(' ')[1];
+    const authHeader = req.headers.authorization;
+    console.log('Authorization header:', authHeader);
+    
+    const token = authHeader?.split(' ')[1];
     if (!token) {
+      console.log('No token provided');
       return res.status(401).json({ message: 'No token provided' });
     }
 
-    const decodedToken = await admin.auth().verifyIdToken(token);
-    req.user = decodedToken;
-    next();
+    console.log('Token received:', token.substring(0, 20) + '...');
+    
+    // Try to verify as JWT first, then Firebase token
+    try {
+      const jwt = require('jsonwebtoken');
+      const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+      console.log('JWT decoded:', decoded);
+      req.user = decoded;
+      next();
+    } catch (jwtError) {
+      console.log('JWT verification failed, trying Firebase token:', jwtError.message);
+      const decodedToken = await admin.auth().verifyIdToken(token);
+      console.log('Firebase token decoded:', decodedToken);
+      req.user = decodedToken;
+      next();
+    }
   } catch (error) {
+    console.error('Token verification error:', error);
     res.status(401).json({ message: 'Invalid token' });
   }
 };
@@ -23,8 +41,12 @@ const verifyToken = async (req, res, next) => {
 router.get('/', async (req, res) => {
   try {
     const usersSnapshot = await admin.firestore().collection('users').get();
+    console.log('Total users found:', usersSnapshot.docs.length);
+    
     const users = usersSnapshot.docs.map(doc => {
       const data = doc.data();
+      console.log(`User ${doc.id} raw data:`, JSON.stringify(data, null, 2));
+      
       return {
         id: doc.id,
         email: data.email,
@@ -240,15 +262,18 @@ router.delete('/:id', async (req, res) => {
 router.get('/profile', verifyToken, async (req, res) => {
   try {
     const userId = req.user.uid;
+    console.log('Fetching profile for user ID:', userId);
     
     // Get user data from Firestore
     const userDoc = await admin.firestore().collection('users').doc(userId).get();
     
     if (!userDoc.exists) {
+      console.log('User document not found for ID:', userId);
       return res.status(404).json({ message: 'User profile not found' });
     }
 
     const userData = userDoc.data();
+    console.log('Raw user data from Firestore:', JSON.stringify(userData, null, 2));
     
     // Return user profile data
     const profile = {
@@ -261,6 +286,7 @@ router.get('/profile', verifyToken, async (req, res) => {
       updatedAt: userData.updatedAt
     };
 
+    console.log('Processed profile data:', JSON.stringify(profile, null, 2));
     res.json(profile);
 
   } catch (error) {

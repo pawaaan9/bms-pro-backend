@@ -24,15 +24,17 @@ app.post('/api/login', async (req, res) => {
     return res.status(400).json({ message: 'Missing fields' });
   }
   try {
-    // Firebase Admin SDK does not support password login directly
-    // This should be handled on the frontend with Firebase JS SDK
-    // Here, we just fetch the user and their role
+    // For now, we'll skip password verification and just check if user exists
+    // In production, you should use Firebase Auth SDK on frontend for proper authentication
     const user = await admin.auth().getUserByEmail(email);
     const userDoc = await admin.firestore().collection('users').doc(user.uid).get();
     if (!userDoc.exists) {
       return res.status(404).json({ message: 'User not found' });
     }
     const userData = userDoc.data();
+    
+    console.log('Login attempt for user:', email);
+    console.log('User data from Firestore:', JSON.stringify(userData, null, 2));
     
     // Create JWT token
     const token = jwt.sign(
@@ -47,6 +49,7 @@ app.post('/api/login', async (req, res) => {
     
     res.json({ token, role: userData.role });
   } catch (error) {
+    console.error('Login error:', error);
     res.status(500).json({ message: error.message });
   }
 });
