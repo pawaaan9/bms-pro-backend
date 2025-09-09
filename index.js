@@ -13,9 +13,9 @@ app.use(express.json());
 const authRoutes = require('./routes/auth');
 app.use('/api', authRoutes);
 
-// Users routes
-const usersRoutes = require('./routes/users');
-app.use('/api/users', usersRoutes);
+// Users routes (disabled, file does not exist)
+// const usersRoutes = require('./routes/users');
+// app.use('/api/users', usersRoutes);
 
 // Login endpoint (returns JWT token)
 app.post('/api/login', async (req, res) => {
