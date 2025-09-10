@@ -17,6 +17,10 @@ app.use('/api', authRoutes);
 const usersRoutes = require('./routes/users');
 app.use('/api/users', usersRoutes);
 
+// Resources routes
+const resourcesRoutes = require('./routes/resources');
+app.use('/api/resources', resourcesRoutes);
+
 // Login endpoint (returns JWT token)
 app.post('/api/login', async (req, res) => {
   const { email, password } = req.body;
