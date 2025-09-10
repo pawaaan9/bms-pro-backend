@@ -52,6 +52,7 @@ router.get('/', async (req, res) => {
         email: data.email,
         role: data.role,
         hallName: data.hallName || (data.owner_profile?.hallName) || null,
+        contactNumber: data.contactNumber || (data.owner_profile?.contactNumber) || null,
         address: data.address ? {
           line1: data.address.line1,
           line2: data.address.line2,
@@ -74,7 +75,7 @@ router.get('/', async (req, res) => {
 // POST /api/users - Create a new user
 router.post('/', async (req, res) => {
   try {
-    const { email, password, role, hallName, address } = req.body;
+    const { email, password, role, hallName, contactNumber, address } = req.body;
 
     // Validate required fields
     if (!email || !password || !role) {
@@ -88,9 +89,9 @@ router.post('/', async (req, res) => {
 
     // For hall owners, validate required fields
     if (role === 'hall_owner') {
-      if (!hallName || !address || !address.line1 || !address.postcode || !address.state) {
+      if (!hallName || !contactNumber || !address || !address.line1 || !address.postcode || !address.state) {
         return res.status(400).json({ 
-          message: 'Hall name and complete address (line1, postcode, state) are required for hall owners' 
+          message: 'Hall name, contact number, and complete address (line1, postcode, state) are required for hall owners' 
         });
       }
     }
@@ -113,6 +114,7 @@ router.post('/', async (req, res) => {
     // Add hall-specific data for hall owners
     if (role === 'hall_owner') {
       userData.hallName = hallName;
+      userData.contactNumber = contactNumber;
       userData.address = {
         line1: address.line1,
         line2: address.line2 || '',
@@ -153,7 +155,7 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { email, role, hallName, address } = req.body;
+    const { email, role, hallName, contactNumber, address } = req.body;
 
     // Validate required fields
     if (!email || !role) {
@@ -167,9 +169,9 @@ router.put('/:id', async (req, res) => {
 
     // For hall owners, validate required fields
     if (role === 'hall_owner') {
-      if (!hallName || !address || !address.line1 || !address.postcode || !address.state) {
+      if (!hallName || !contactNumber || !address || !address.line1 || !address.postcode || !address.state) {
         return res.status(400).json({ 
-          message: 'Hall name and complete address (line1, postcode, state) are required for hall owners' 
+          message: 'Hall name, contact number, and complete address (line1, postcode, state) are required for hall owners' 
         });
       }
     }
@@ -190,6 +192,7 @@ router.put('/:id', async (req, res) => {
     // Add hall-specific data for hall owners
     if (role === 'hall_owner') {
       userData.hallName = hallName;
+      userData.contactNumber = contactNumber;
       userData.address = {
         line1: address.line1,
         line2: address.line2 || '',
@@ -199,6 +202,7 @@ router.put('/:id', async (req, res) => {
     } else {
       // Remove hall-specific data for non-hall owners
       userData.hallName = admin.firestore.FieldValue.delete();
+      userData.contactNumber = admin.firestore.FieldValue.delete();
       userData.address = admin.firestore.FieldValue.delete();
     }
 
@@ -281,6 +285,7 @@ router.get('/profile', verifyToken, async (req, res) => {
       email: userData.email,
       role: userData.role,
       hallName: userData.hallName || (userData.owner_profile?.hallName) || null,
+      contactNumber: userData.contactNumber || (userData.owner_profile?.contactNumber) || null,
       address: userData.address || (userData.owner_profile?.address) || null,
       createdAt: userData.createdAt,
       updatedAt: userData.updatedAt
