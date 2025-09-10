@@ -21,6 +21,10 @@ app.use('/api/users', usersRoutes);
 const resourcesRoutes = require('./routes/resources');
 app.use('/api/resources', resourcesRoutes);
 
+// Pricing routes
+const pricingRoutes = require('./routes/pricing');
+app.use('/api/pricing', pricingRoutes);
+
 // Login endpoint (returns JWT token)
 app.post('/api/login', async (req, res) => {
   const { email, password } = req.body;
