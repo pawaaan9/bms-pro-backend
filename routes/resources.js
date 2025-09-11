@@ -351,7 +351,7 @@ router.get('/public/:hallOwnerId', async (req, res) => {
     const hallOwnerInfo = {
       name: userData.name || userData.businessName || 'Hall Owner',
       address: userData.address || 'Address not provided',
-      phone: userData.phone || 'Phone not provided',
+      phone: userData.phone || userData.contactNumber || 'Phone not provided',
       email: userData.email || 'Email not provided',
       businessName: userData.businessName || userData.name || 'Business Name'
     };
