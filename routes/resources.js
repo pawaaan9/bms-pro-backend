@@ -308,6 +308,65 @@ router.delete('/:id', verifyToken, async (req, res) => {
   }
 });
 
+// GET /api/resources/public/:hallOwnerId - Get all resources for a specific hall owner (public endpoint)
+router.get('/public/:hallOwnerId', async (req, res) => {
+  try {
+    const { hallOwnerId } = req.params;
+    
+    // Get hall owner data to include address information
+    const userDoc = await admin.firestore().collection('users').doc(hallOwnerId).get();
+    if (!userDoc.exists) {
+      return res.status(404).json({ message: 'Hall owner not found' });
+    }
+    
+    const userData = userDoc.data();
+    if (userData.role !== 'hall_owner') {
+      return res.status(404).json({ message: 'Hall owner not found' });
+    }
+    
+    // Get all resources for this hall_owner
+    const resourcesSnapshot = await admin.firestore()
+      .collection('resources')
+      .where('hallOwnerId', '==', hallOwnerId)
+      .get();
+    
+    const resources = resourcesSnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+      createdAt: doc.data().createdAt?.toDate?.() || null,
+      updatedAt: doc.data().updatedAt?.toDate?.() || null
+    })).sort((a, b) => {
+      // Sort by createdAt descending (newest first)
+      if (a.createdAt && b.createdAt) {
+        return b.createdAt.getTime() - a.createdAt.getTime();
+      }
+      // If one doesn't have createdAt, put it at the end
+      if (a.createdAt && !b.createdAt) return -1;
+      if (!a.createdAt && b.createdAt) return 1;
+      // If neither has createdAt, sort by name
+      return a.name.localeCompare(b.name);
+    });
+    
+    // Include hall owner information (address, contact details)
+    const hallOwnerInfo = {
+      name: userData.name || userData.businessName || 'Hall Owner',
+      address: userData.address || 'Address not provided',
+      phone: userData.phone || 'Phone not provided',
+      email: userData.email || 'Email not provided',
+      businessName: userData.businessName || userData.name || 'Business Name'
+    };
+    
+    res.json({
+      resources,
+      hallOwner: hallOwnerInfo
+    });
+    
+  } catch (error) {
+    console.error('Error fetching public resources:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
 // GET /api/resources/:id - Get a specific resource
 router.get('/:id', verifyToken, async (req, res) => {
   try {
