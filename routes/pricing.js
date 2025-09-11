@@ -323,4 +323,44 @@ router.get('/:id', verifyToken, async (req, res) => {
   }
 });
 
+// GET /api/pricing/public/:hallOwnerId - Get all pricing for a specific hall owner (public endpoint)
+router.get('/public/:hallOwnerId', async (req, res) => {
+  try {
+    const { hallOwnerId } = req.params;
+    
+    // Get hall owner data to verify they exist
+    const userDoc = await admin.firestore().collection('users').doc(hallOwnerId).get();
+    if (!userDoc.exists) {
+      return res.status(404).json({ message: 'Hall owner not found' });
+    }
+
+    const userData = userDoc.data();
+    if (userData.role !== 'hall_owner') {
+      return res.status(404).json({ message: 'Hall owner not found' });
+    }
+
+    // Get all pricing for this hall_owner
+    const pricingSnapshot = await admin.firestore()
+      .collection('pricing')
+      .where('hallOwnerId', '==', hallOwnerId)
+      .get();
+
+    const pricing = pricingSnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+      createdAt: doc.data().createdAt?.toDate?.() || null,
+      updatedAt: doc.data().updatedAt?.toDate?.() || null
+    })).sort((a, b) => {
+      // Sort by resource name
+      return a.resourceName.localeCompare(b.resourceName);
+    });
+
+    res.json(pricing);
+
+  } catch (error) {
+    console.error('Error fetching public pricing:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
 module.exports = router;
