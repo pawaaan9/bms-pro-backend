@@ -105,6 +105,7 @@ router.post('/', async (req, res) => {
 
     // Prepare user data for Firestore
     const userData = {
+      id: userRecord.uid, // Add the UID as a field in the document
       email: email,
       role: role,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -184,6 +185,7 @@ router.put('/:id', async (req, res) => {
 
     // Prepare user data for Firestore
     const userData = {
+      id: id, // Ensure the ID field is maintained
       email: email,
       role: role,
       updatedAt: admin.firestore.FieldValue.serverTimestamp()

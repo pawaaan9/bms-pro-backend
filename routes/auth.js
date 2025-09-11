@@ -17,6 +17,7 @@ router.post('/register', async (req, res) => {
     });
     // Prepare user data for Firestore
     let userData = {
+      id: userRecord.uid, // Add the UID as a field in the document
       email,
       role,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
