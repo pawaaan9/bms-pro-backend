@@ -458,4 +458,124 @@ router.get('/:id', verifyToken, async (req, res) => {
   }
 });
 
+// GET /api/bookings/unavailable-dates/:hallOwnerId - Get unavailable dates for calendar (public endpoint)
+router.get('/unavailable-dates/:hallOwnerId', async (req, res) => {
+  try {
+    const { hallOwnerId } = req.params;
+    const { resourceId, startDate, endDate } = req.query;
+    
+    console.log('Fetching unavailable dates for hallOwnerId:', hallOwnerId);
+    console.log('Query params:', { resourceId, startDate, endDate });
+    
+    // Validate hall owner exists
+    const userDoc = await admin.firestore().collection('users').doc(hallOwnerId).get();
+    if (!userDoc.exists) {
+      console.log('Hall owner not found:', hallOwnerId);
+      return res.status(404).json({ message: 'Hall owner not found' });
+    }
+
+    const userData = userDoc.data();
+    if (userData.role !== 'hall_owner') {
+      console.log('User is not a hall owner:', userData.role);
+      return res.status(404).json({ message: 'Hall owner not found' });
+    }
+
+    console.log('Hall owner validated:', userData.name || userData.businessName);
+
+    // Get all bookings for this hall owner first, then filter in memory
+    // This avoids complex Firestore query issues
+    let query = admin.firestore()
+      .collection('bookings')
+      .where('hallOwnerId', '==', hallOwnerId);
+
+    console.log('Executing Firestore query...');
+    const bookingsSnapshot = await query.get();
+    console.log('Found', bookingsSnapshot.docs.length, 'total bookings');
+    
+    // Filter bookings in memory
+    const filteredBookings = bookingsSnapshot.docs.filter(doc => {
+      const booking = doc.data();
+      
+      // Filter by status
+      if (!['pending', 'confirmed'].includes(booking.status)) {
+        return false;
+      }
+      
+      // Filter by resource if specified
+      if (resourceId && booking.selectedHall !== resourceId) {
+        return false;
+      }
+      
+      // Filter by date range if specified
+      if (startDate && booking.bookingDate < startDate) {
+        return false;
+      }
+      if (endDate && booking.bookingDate > endDate) {
+        return false;
+      }
+      
+      return true;
+    });
+    
+    console.log('Filtered to', filteredBookings.length, 'active bookings');
+    
+    // Group bookings by date and resource
+    const unavailableDates = {};
+    
+    filteredBookings.forEach(doc => {
+      const booking = doc.data();
+      const bookingDate = booking.bookingDate;
+      const selectedHall = booking.selectedHall;
+      
+      if (!bookingDate || !selectedHall) {
+        console.log('Skipping booking with missing data:', booking);
+        return;
+      }
+      
+      if (!unavailableDates[bookingDate]) {
+        unavailableDates[bookingDate] = {};
+      }
+      
+      if (!unavailableDates[bookingDate][selectedHall]) {
+        unavailableDates[bookingDate][selectedHall] = [];
+      }
+      
+      unavailableDates[bookingDate][selectedHall].push({
+        bookingId: doc.id,
+        startTime: booking.startTime || 'N/A',
+        endTime: booking.endTime || 'N/A',
+        customerName: booking.customerName || 'Unknown',
+        eventType: booking.eventType || 'Unknown',
+        status: booking.status || 'Unknown'
+      });
+    });
+
+    console.log('Processed unavailable dates:', Object.keys(unavailableDates));
+
+    res.json({
+      unavailableDates,
+      totalBookings: filteredBookings.length,
+      message: 'Successfully fetched unavailable dates'
+    });
+
+  } catch (error) {
+    console.error('Error fetching unavailable dates:', error);
+    console.error('Error stack:', error.stack);
+    res.status(500).json({ 
+      message: 'Internal server error while fetching unavailable dates',
+      error: error.message,
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
+  }
+});
+
+// GET /api/bookings/test - Simple test endpoint
+router.get('/test', (req, res) => {
+  res.json({ 
+    message: 'Bookings API is working!',
+    timestamp: new Date().toISOString(),
+    status: 'OK'
+  });
+});
+
 module.exports = router;
