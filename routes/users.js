@@ -302,4 +302,75 @@ router.get('/profile', verifyToken, async (req, res) => {
   }
 });
 
+// POST /api/users/customers - Create a new customer (public endpoint for customer registration)
+router.post('/customers', async (req, res) => {
+  try {
+    const {
+      customerId,
+      name,
+      email,
+      phone,
+      avatar,
+      source
+    } = req.body;
+
+    // Validate required fields
+    if (!customerId || !name || !email) {
+      return res.status(400).json({
+        message: 'Missing required fields: customerId, name, email'
+      });
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ message: 'Invalid email format' });
+    }
+
+    // Check if customer already exists
+    const existingCustomer = await admin.firestore().collection('customers').doc(customerId).get();
+    if (existingCustomer.exists) {
+      return res.status(409).json({ message: 'Customer already exists with this ID' });
+    }
+
+    // Create customer data
+    const customerData = {
+      customerId: customerId,
+      name: name.trim(),
+      email: email.trim().toLowerCase(),
+      phone: phone ? phone.trim() : '',
+      avatar: avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=e63946&color=fff`,
+      role: 'customer',
+      status: 'active',
+      source: source || 'website',
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    };
+
+    // Save to customers collection in Firestore
+    await admin.firestore().collection('customers').doc(customerId).set(customerData);
+
+    console.log('Customer created successfully:', {
+      customerId: customerId,
+      name: name,
+      email: email,
+      source: source || 'website'
+    });
+
+    res.status(201).json({
+      message: 'Customer created successfully',
+      customer: {
+        id: customerId,
+        ...customerData,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      }
+    });
+
+  } catch (error) {
+    console.error('Error creating customer:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
 module.exports = router;

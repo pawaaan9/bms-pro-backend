@@ -41,6 +41,7 @@ const verifyToken = async (req, res, next) => {
 router.post('/', async (req, res) => {
   try {
     const {
+      customerId,
       customerName,
       customerEmail,
       customerPhone,
@@ -51,7 +52,10 @@ router.post('/', async (req, res) => {
       endTime,
       additionalDescription,
       hallOwnerId,
-      estimatedPrice
+      estimatedPrice,
+      customerAvatar,
+      guestCount,
+      bookingSource
     } = req.body;
 
     // Validate required fields
@@ -213,9 +217,11 @@ router.post('/', async (req, res) => {
 
     // Create booking data
     const bookingData = {
+      customerId: customerId || null, // Firebase UID of the customer (optional for backward compatibility)
       customerName: customerName.trim(),
       customerEmail: customerEmail.trim().toLowerCase(),
       customerPhone: customerPhone.trim(),
+      customerAvatar: customerAvatar || null, // Customer avatar URL
       eventType: eventType.trim(),
       selectedHall: selectedHall,
       hallName: hallData.name, // Store hall name for easier reference
@@ -223,16 +229,29 @@ router.post('/', async (req, res) => {
       startTime: startTime,
       endTime: endTime,
       additionalDescription: additionalDescription ? additionalDescription.trim() : '',
+      guestCount: guestCount ? parseInt(guestCount) : null, // Number of guests
       hallOwnerId: hallOwnerId,
       status: 'pending', // New bookings start as pending
       calculatedPrice: calculatedPrice,
       priceDetails: priceDetails,
+      bookingSource: bookingSource || 'website', // Track where booking came from
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     };
 
     // Save to Firestore
     const docRef = await admin.firestore().collection('bookings').add(bookingData);
+
+    console.log('Booking created successfully:', {
+      bookingId: docRef.id,
+      customerId: customerId,
+      customerName: customerName,
+      customerEmail: customerEmail,
+      hallOwnerId: hallOwnerId,
+      selectedHall: selectedHall,
+      bookingDate: bookingDate,
+      bookingSource: bookingSource || 'website'
+    });
 
     // Get the created booking with ID
     const createdBooking = {
