@@ -276,10 +276,16 @@ router.post('/', async (req, res) => {
 router.get('/hall-owner/:hallOwnerId', verifyToken, async (req, res) => {
   try {
     const { hallOwnerId } = req.params;
-    const userId = req.user.uid;
+    // Handle both JWT and Firebase tokens - JWT has 'uid', Firebase has 'uid'
+    const userId = req.user.uid || req.user.user_id;
+
+    console.log('Request user object:', req.user);
+    console.log('Extracted userId:', userId);
+    console.log('Requested hallOwnerId:', hallOwnerId);
 
     // Verify the authenticated user is the hall owner
     if (userId !== hallOwnerId) {
+      console.log('User ID mismatch:', { userId, hallOwnerId });
       return res.status(403).json({ message: 'Access denied. You can only view your own bookings.' });
     }
 
@@ -295,24 +301,41 @@ router.get('/hall-owner/:hallOwnerId', verifyToken, async (req, res) => {
     }
 
     // Get all bookings for this hall owner
+    console.log('Fetching bookings for hallOwnerId:', hallOwnerId);
     const bookingsSnapshot = await admin.firestore()
       .collection('bookings')
       .where('hallOwnerId', '==', hallOwnerId)
-      .orderBy('createdAt', 'desc')
       .get();
 
-    const bookings = bookingsSnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-      createdAt: doc.data().createdAt?.toDate?.() || null,
-      updatedAt: doc.data().updatedAt?.toDate?.() || null
-    }));
+    console.log('Found', bookingsSnapshot.docs.length, 'bookings');
 
+    const bookings = bookingsSnapshot.docs.map(doc => {
+      const data = doc.data();
+      console.log('Booking data:', { id: doc.id, hallOwnerId: data.hallOwnerId, customerName: data.customerName });
+      return {
+        id: doc.id,
+        ...data,
+        createdAt: data.createdAt?.toDate?.() || null,
+        updatedAt: data.updatedAt?.toDate?.() || null
+      };
+    });
+
+    // Sort bookings by createdAt in descending order (newest first)
+    bookings.sort((a, b) => {
+      if (!a.createdAt || !b.createdAt) return 0;
+      return b.createdAt.getTime() - a.createdAt.getTime();
+    });
+
+    console.log('Returning', bookings.length, 'bookings');
     res.json(bookings);
 
   } catch (error) {
     console.error('Error fetching bookings:', error);
-    res.status(500).json({ message: error.message });
+    console.error('Error stack:', error.stack);
+    res.status(500).json({ 
+      message: error.message,
+      error: process.env.NODE_ENV === 'development' ? error.stack : 'Internal server error'
+    });
   }
 });
 
