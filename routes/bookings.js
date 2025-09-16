@@ -261,6 +261,34 @@ router.post('/', async (req, res) => {
       updatedAt: new Date()
     };
 
+    // Create notification for the customer if they have a customerId (from Cranbourne website)
+    if (customerId) {
+      try {
+        const priceMessage = calculatedPrice ? ` Estimated cost: $${calculatedPrice.toFixed(2)}.` : '';
+        
+        await admin.firestore().collection('notifications').add({
+          userId: customerId,
+          type: 'booking_submitted',
+          title: 'Booking Request Submitted',
+          message: `Your booking request for ${eventType} on ${bookingDate} has been submitted successfully.${priceMessage} We'll get back to you soon with confirmation.`,
+          data: {
+            bookingId: docRef.id,
+            eventType: eventType,
+            date: bookingDate,
+            estimatedPrice: calculatedPrice,
+            hallName: hallData.name
+          },
+          isRead: false,
+          createdAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+
+        console.log('Notification created for customer booking submission:', customerId);
+      } catch (notificationError) {
+        console.error('Error creating booking submission notification:', notificationError);
+        // Don't fail the booking creation if notification creation fails
+      }
+    }
+
     res.status(201).json({
       message: 'Booking request submitted successfully',
       booking: createdBooking
@@ -383,6 +411,53 @@ router.put('/:id/status', verifyToken, async (req, res) => {
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     });
 
+    // Create notification for the customer if they have a customerId
+    if (bookingData.customerId) {
+      try {
+        let notificationTitle = '';
+        let notificationMessage = '';
+        
+        switch (status) {
+          case 'confirmed':
+            notificationTitle = 'Booking Confirmed!';
+            notificationMessage = `Great news! Your booking for ${bookingData.eventType} on ${bookingData.bookingDate} has been confirmed. We look forward to hosting your event!`;
+            break;
+          case 'cancelled':
+            notificationTitle = 'Booking Cancelled';
+            notificationMessage = `Your booking for ${bookingData.eventType} on ${bookingData.bookingDate} has been cancelled. Please contact us if you have any questions.`;
+            break;
+          case 'completed':
+            notificationTitle = 'Event Completed';
+            notificationMessage = `Thank you for choosing us! Your ${bookingData.eventType} event on ${bookingData.bookingDate} has been completed. We hope you had a wonderful time!`;
+            break;
+          default:
+            notificationTitle = 'Booking Status Updated';
+            notificationMessage = `Your booking for ${bookingData.eventType} on ${bookingData.bookingDate} status has been updated to ${status}.`;
+        }
+
+        await admin.firestore().collection('notifications').add({
+          userId: bookingData.customerId,
+          type: `booking_${status}`,
+          title: notificationTitle,
+          message: notificationMessage,
+          data: {
+            bookingId: id,
+            eventType: bookingData.eventType,
+            date: bookingData.bookingDate,
+            status: status,
+            hallName: bookingData.hallName
+          },
+          isRead: false,
+          createdAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+
+        console.log('Notification created for customer:', bookingData.customerId);
+      } catch (notificationError) {
+        console.error('Error creating notification:', notificationError);
+        // Don't fail the booking update if notification creation fails
+      }
+    }
+
     res.json({
       message: 'Booking status updated successfully',
       bookingId: id,
@@ -444,6 +519,33 @@ router.put('/:id/price', verifyToken, async (req, res) => {
 
     // Update booking price
     await admin.firestore().collection('bookings').doc(id).update(updateData);
+
+    // Create notification for the customer if they have a customerId and price was updated
+    if (bookingData.customerId && calculatedPrice !== undefined) {
+      try {
+        await admin.firestore().collection('notifications').add({
+          userId: bookingData.customerId,
+          type: 'booking_price_updated',
+          title: 'Booking Price Updated',
+          message: `The price for your ${bookingData.eventType} booking on ${bookingData.bookingDate} has been updated to $${calculatedPrice.toFixed(2)}. Please review the updated pricing details.`,
+          data: {
+            bookingId: id,
+            eventType: bookingData.eventType,
+            date: bookingData.bookingDate,
+            newPrice: calculatedPrice,
+            previousPrice: bookingData.calculatedPrice,
+            hallName: bookingData.hallName
+          },
+          isRead: false,
+          createdAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+
+        console.log('Price update notification created for customer:', bookingData.customerId);
+      } catch (notificationError) {
+        console.error('Error creating price update notification:', notificationError);
+        // Don't fail the price update if notification creation fails
+      }
+    }
 
     res.json({
       message: 'Booking price updated successfully',
