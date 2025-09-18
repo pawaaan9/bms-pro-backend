@@ -37,6 +37,10 @@ app.use('/api/notifications', notificationsRoutes);
 const dashboardRoutes = require('./routes/dashboard');
 app.use('/api/dashboard', dashboardRoutes);
 
+// Reports routes
+const reportsRoutes = require('./routes/reports');
+app.use('/api/reports', reportsRoutes);
+
 // Login endpoint (returns JWT token)
 app.post('/api/login', async (req, res) => {
   const { email, password } = req.body;
