@@ -139,17 +139,32 @@ const generateForecastData = (historicalData, periods = 6) => {
 router.get('/executive-kpis', verifyToken, async (req, res) => {
   try {
     const userId = req.user.uid;
-    const { period = '90d' } = req.query;
+    const { period = '90d', hallOwnerId } = req.query;
     
-    // Get user data to verify they are a hall_owner
+    // Get user data to verify they are a hall_owner or sub_user
     const userDoc = await admin.firestore().collection('users').doc(userId).get();
     if (!userDoc.exists) {
       return res.status(404).json({ message: 'User not found' });
     }
     
     const userData = userDoc.data();
-    if (userData.role !== 'hall_owner') {
-      return res.status(403).json({ message: 'Access denied. Only hall owners can view reports.' });
+    let dataUserId = userId; // Default to current user
+    
+    // Determine which user's data to fetch
+    if (userData.role === 'sub_user') {
+      // For sub-users, use their parent's ID
+      dataUserId = userData.parentUserId;
+      if (!dataUserId) {
+        return res.status(400).json({ message: 'Sub-user has no parent user assigned' });
+      }
+    } else if (userData.role === 'hall_owner') {
+      // For hall owners, use their own ID
+      dataUserId = userId;
+    } else if (userData.role === 'super_admin') {
+      // For super admins, use the provided hallOwnerId or default to current user
+      dataUserId = hallOwnerId || userId;
+    } else {
+      return res.status(403).json({ message: 'Access denied. Only hall owners, sub-users, and super admins can view reports.' });
     }
 
     const dateRanges = getDateRanges(period);
@@ -162,7 +177,7 @@ router.get('/executive-kpis', verifyToken, async (req, res) => {
     // Get all bookings for this hall owner
     const bookingsSnapshot = await admin.firestore()
       .collection('bookings')
-      .where('hallOwnerId', '==', userId)
+      .where('hallOwnerId', '==', dataUserId)
       .get();
 
     const allBookings = bookingsSnapshot.docs.map(doc => ({
@@ -282,23 +297,38 @@ router.get('/executive-kpis', verifyToken, async (req, res) => {
 router.get('/historical-data', verifyToken, async (req, res) => {
   try {
     const userId = req.user.uid;
-    const { months = 6 } = req.query;
+    const { months = 6, hallOwnerId } = req.query;
     
-    // Get user data to verify they are a hall_owner
+    // Get user data to verify they are a hall_owner or sub_user
     const userDoc = await admin.firestore().collection('users').doc(userId).get();
     if (!userDoc.exists) {
       return res.status(404).json({ message: 'User not found' });
     }
     
     const userData = userDoc.data();
-    if (userData.role !== 'hall_owner') {
-      return res.status(403).json({ message: 'Access denied. Only hall owners can view reports.' });
+    let dataUserId = userId; // Default to current user
+    
+    // Determine which user's data to fetch
+    if (userData.role === 'sub_user') {
+      // For sub-users, use their parent's ID
+      dataUserId = userData.parentUserId;
+      if (!dataUserId) {
+        return res.status(400).json({ message: 'Sub-user has no parent user assigned' });
+      }
+    } else if (userData.role === 'hall_owner') {
+      // For hall owners, use their own ID
+      dataUserId = userId;
+    } else if (userData.role === 'super_admin') {
+      // For super admins, use the provided hallOwnerId or default to current user
+      dataUserId = hallOwnerId || userId;
+    } else {
+      return res.status(403).json({ message: 'Access denied. Only hall owners, sub-users, and super admins can view reports.' });
     }
 
     // Get all bookings for this hall owner
     const bookingsSnapshot = await admin.firestore()
       .collection('bookings')
-      .where('hallOwnerId', '==', userId)
+      .where('hallOwnerId', '==', dataUserId)
       .get();
 
     const allBookings = bookingsSnapshot.docs.map(doc => ({
@@ -343,23 +373,38 @@ router.get('/historical-data', verifyToken, async (req, res) => {
 router.get('/pipeline-data', verifyToken, async (req, res) => {
   try {
     const userId = req.user.uid;
-    const { months = 6 } = req.query;
+    const { months = 6, hallOwnerId } = req.query;
     
-    // Get user data to verify they are a hall_owner
+    // Get user data to verify they are a hall_owner or sub_user
     const userDoc = await admin.firestore().collection('users').doc(userId).get();
     if (!userDoc.exists) {
       return res.status(404).json({ message: 'User not found' });
     }
     
     const userData = userDoc.data();
-    if (userData.role !== 'hall_owner') {
-      return res.status(403).json({ message: 'Access denied. Only hall owners can view reports.' });
+    let dataUserId = userId; // Default to current user
+    
+    // Determine which user's data to fetch
+    if (userData.role === 'sub_user') {
+      // For sub-users, use their parent's ID
+      dataUserId = userData.parentUserId;
+      if (!dataUserId) {
+        return res.status(400).json({ message: 'Sub-user has no parent user assigned' });
+      }
+    } else if (userData.role === 'hall_owner') {
+      // For hall owners, use their own ID
+      dataUserId = userId;
+    } else if (userData.role === 'super_admin') {
+      // For super admins, use the provided hallOwnerId or default to current user
+      dataUserId = hallOwnerId || userId;
+    } else {
+      return res.status(403).json({ message: 'Access denied. Only hall owners, sub-users, and super admins can view reports.' });
     }
 
     // Get all bookings for this hall owner
     const bookingsSnapshot = await admin.firestore()
       .collection('bookings')
-      .where('hallOwnerId', '==', userId)
+      .where('hallOwnerId', '==', dataUserId)
       .get();
 
     const allBookings = bookingsSnapshot.docs.map(doc => ({
@@ -405,17 +450,32 @@ router.get('/pipeline-data', verifyToken, async (req, res) => {
 router.get('/funnel-data', verifyToken, async (req, res) => {
   try {
     const userId = req.user.uid;
-    const { period = '90d' } = req.query;
+    const { period = '90d', hallOwnerId } = req.query;
     
-    // Get user data to verify they are a hall_owner
+    // Get user data to verify they are a hall_owner or sub_user
     const userDoc = await admin.firestore().collection('users').doc(userId).get();
     if (!userDoc.exists) {
       return res.status(404).json({ message: 'User not found' });
     }
     
     const userData = userDoc.data();
-    if (userData.role !== 'hall_owner') {
-      return res.status(403).json({ message: 'Access denied. Only hall owners can view reports.' });
+    let dataUserId = userId; // Default to current user
+    
+    // Determine which user's data to fetch
+    if (userData.role === 'sub_user') {
+      // For sub-users, use their parent's ID
+      dataUserId = userData.parentUserId;
+      if (!dataUserId) {
+        return res.status(400).json({ message: 'Sub-user has no parent user assigned' });
+      }
+    } else if (userData.role === 'hall_owner') {
+      // For hall owners, use their own ID
+      dataUserId = userId;
+    } else if (userData.role === 'super_admin') {
+      // For super admins, use the provided hallOwnerId or default to current user
+      dataUserId = hallOwnerId || userId;
+    } else {
+      return res.status(403).json({ message: 'Access denied. Only hall owners, sub-users, and super admins can view reports.' });
     }
 
     const dateRanges = getDateRanges(period);
@@ -423,7 +483,7 @@ router.get('/funnel-data', verifyToken, async (req, res) => {
     // Get all bookings for this hall owner in the period
     const bookingsSnapshot = await admin.firestore()
       .collection('bookings')
-      .where('hallOwnerId', '==', userId)
+      .where('hallOwnerId', '==', dataUserId)
       .get();
 
     const allBookings = bookingsSnapshot.docs.map(doc => ({
@@ -491,22 +551,38 @@ router.get('/funnel-data', verifyToken, async (req, res) => {
 router.get('/payment-analysis', verifyToken, async (req, res) => {
   try {
     const userId = req.user.uid;
+    const { hallOwnerId } = req.query;
     
-    // Get user data to verify they are a hall_owner
+    // Get user data to verify they are a hall_owner or sub_user
     const userDoc = await admin.firestore().collection('users').doc(userId).get();
     if (!userDoc.exists) {
       return res.status(404).json({ message: 'User not found' });
     }
     
     const userData = userDoc.data();
-    if (userData.role !== 'hall_owner') {
-      return res.status(403).json({ message: 'Access denied. Only hall owners can view reports.' });
+    let dataUserId = userId; // Default to current user
+    
+    // Determine which user's data to fetch
+    if (userData.role === 'sub_user') {
+      // For sub-users, use their parent's ID
+      dataUserId = userData.parentUserId;
+      if (!dataUserId) {
+        return res.status(400).json({ message: 'Sub-user has no parent user assigned' });
+      }
+    } else if (userData.role === 'hall_owner') {
+      // For hall owners, use their own ID
+      dataUserId = userId;
+    } else if (userData.role === 'super_admin') {
+      // For super admins, use the provided hallOwnerId or default to current user
+      dataUserId = hallOwnerId || userId;
+    } else {
+      return res.status(403).json({ message: 'Access denied. Only hall owners, sub-users, and super admins can view reports.' });
     }
 
     // Get all confirmed bookings for this hall owner
     const bookingsSnapshot = await admin.firestore()
       .collection('bookings')
-      .where('hallOwnerId', '==', userId)
+      .where('hallOwnerId', '==', dataUserId)
       .where('status', '==', 'confirmed')
       .get();
 
@@ -575,22 +651,38 @@ router.get('/payment-analysis', verifyToken, async (req, res) => {
 router.get('/resource-utilisation', verifyToken, async (req, res) => {
   try {
     const userId = req.user.uid;
+    const { hallOwnerId } = req.query;
     
-    // Get user data to verify they are a hall_owner
+    // Get user data to verify they are a hall_owner or sub_user
     const userDoc = await admin.firestore().collection('users').doc(userId).get();
     if (!userDoc.exists) {
       return res.status(404).json({ message: 'User not found' });
     }
     
     const userData = userDoc.data();
-    if (userData.role !== 'hall_owner') {
-      return res.status(403).json({ message: 'Access denied. Only hall owners can view reports.' });
+    let dataUserId = userId; // Default to current user
+    
+    // Determine which user's data to fetch
+    if (userData.role === 'sub_user') {
+      // For sub-users, use their parent's ID
+      dataUserId = userData.parentUserId;
+      if (!dataUserId) {
+        return res.status(400).json({ message: 'Sub-user has no parent user assigned' });
+      }
+    } else if (userData.role === 'hall_owner') {
+      // For hall owners, use their own ID
+      dataUserId = userId;
+    } else if (userData.role === 'super_admin') {
+      // For super admins, use the provided hallOwnerId or default to current user
+      dataUserId = hallOwnerId || userId;
+    } else {
+      return res.status(403).json({ message: 'Access denied. Only hall owners, sub-users, and super admins can view reports.' });
     }
 
     // Get all resources for this hall owner
     const resourcesSnapshot = await admin.firestore()
       .collection('resources')
-      .where('hallOwnerId', '==', userId)
+      .where('hallOwnerId', '==', dataUserId)
       .get();
 
     const resources = resourcesSnapshot.docs.map(doc => ({
@@ -602,7 +694,7 @@ router.get('/resource-utilisation', verifyToken, async (req, res) => {
     // Get all bookings for this hall owner
     const bookingsSnapshot = await admin.firestore()
       .collection('bookings')
-      .where('hallOwnerId', '==', userId)
+      .where('hallOwnerId', '==', dataUserId)
       .get();
 
     const allBookings = bookingsSnapshot.docs.map(doc => ({
@@ -665,17 +757,32 @@ router.get('/resource-utilisation', verifyToken, async (req, res) => {
 router.get('/cancellation-reasons', verifyToken, async (req, res) => {
   try {
     const userId = req.user.uid;
-    const { period = '90d' } = req.query;
+    const { period = '90d', hallOwnerId } = req.query;
     
-    // Get user data to verify they are a hall_owner
+    // Get user data to verify they are a hall_owner or sub_user
     const userDoc = await admin.firestore().collection('users').doc(userId).get();
     if (!userDoc.exists) {
       return res.status(404).json({ message: 'User not found' });
     }
     
     const userData = userDoc.data();
-    if (userData.role !== 'hall_owner') {
-      return res.status(403).json({ message: 'Access denied. Only hall owners can view reports.' });
+    let dataUserId = userId; // Default to current user
+    
+    // Determine which user's data to fetch
+    if (userData.role === 'sub_user') {
+      // For sub-users, use their parent's ID
+      dataUserId = userData.parentUserId;
+      if (!dataUserId) {
+        return res.status(400).json({ message: 'Sub-user has no parent user assigned' });
+      }
+    } else if (userData.role === 'hall_owner') {
+      // For hall owners, use their own ID
+      dataUserId = userId;
+    } else if (userData.role === 'super_admin') {
+      // For super admins, use the provided hallOwnerId or default to current user
+      dataUserId = hallOwnerId || userId;
+    } else {
+      return res.status(403).json({ message: 'Access denied. Only hall owners, sub-users, and super admins can view reports.' });
     }
 
     const dateRanges = getDateRanges(period);
@@ -683,7 +790,7 @@ router.get('/cancellation-reasons', verifyToken, async (req, res) => {
     // Get all cancelled bookings for this hall owner in the period
     const bookingsSnapshot = await admin.firestore()
       .collection('bookings')
-      .where('hallOwnerId', '==', userId)
+      .where('hallOwnerId', '==', dataUserId)
       .where('status', '==', 'cancelled')
       .get();
 
@@ -721,23 +828,38 @@ router.get('/cancellation-reasons', verifyToken, async (req, res) => {
 router.get('/forecast', verifyToken, async (req, res) => {
   try {
     const userId = req.user.uid;
-    const { periods = 6 } = req.query;
+    const { periods = 6, hallOwnerId } = req.query;
     
-    // Get user data to verify they are a hall_owner
+    // Get user data to verify they are a hall_owner or sub_user
     const userDoc = await admin.firestore().collection('users').doc(userId).get();
     if (!userDoc.exists) {
       return res.status(404).json({ message: 'User not found' });
     }
     
     const userData = userDoc.data();
-    if (userData.role !== 'hall_owner') {
-      return res.status(403).json({ message: 'Access denied. Only hall owners can view reports.' });
+    let dataUserId = userId; // Default to current user
+    
+    // Determine which user's data to fetch
+    if (userData.role === 'sub_user') {
+      // For sub-users, use their parent's ID
+      dataUserId = userData.parentUserId;
+      if (!dataUserId) {
+        return res.status(400).json({ message: 'Sub-user has no parent user assigned' });
+      }
+    } else if (userData.role === 'hall_owner') {
+      // For hall owners, use their own ID
+      dataUserId = userId;
+    } else if (userData.role === 'super_admin') {
+      // For super admins, use the provided hallOwnerId or default to current user
+      dataUserId = hallOwnerId || userId;
+    } else {
+      return res.status(403).json({ message: 'Access denied. Only hall owners, sub-users, and super admins can view reports.' });
     }
 
     // Get all bookings for this hall owner
     const bookingsSnapshot = await admin.firestore()
       .collection('bookings')
-      .where('hallOwnerId', '==', userId)
+      .where('hallOwnerId', '==', dataUserId)
       .get();
 
     const allBookings = bookingsSnapshot.docs.map(doc => ({
@@ -801,17 +923,32 @@ router.get('/forecast', verifyToken, async (req, res) => {
 router.get('/summary', verifyToken, async (req, res) => {
   try {
     const userId = req.user.uid;
-    const { period = '90d' } = req.query;
+    const { period = '90d', hallOwnerId } = req.query;
     
-    // Get user data to verify they are a hall_owner
+    // Get user data to verify they are a hall_owner or sub_user
     const userDoc = await admin.firestore().collection('users').doc(userId).get();
     if (!userDoc.exists) {
       return res.status(404).json({ message: 'User not found' });
     }
     
     const userData = userDoc.data();
-    if (userData.role !== 'hall_owner') {
-      return res.status(403).json({ message: 'Access denied. Only hall owners can view reports.' });
+    let dataUserId = userId; // Default to current user
+    
+    // Determine which user's data to fetch
+    if (userData.role === 'sub_user') {
+      // For sub-users, use their parent's ID
+      dataUserId = userData.parentUserId;
+      if (!dataUserId) {
+        return res.status(400).json({ message: 'Sub-user has no parent user assigned' });
+      }
+    } else if (userData.role === 'hall_owner') {
+      // For hall owners, use their own ID
+      dataUserId = userId;
+    } else if (userData.role === 'super_admin') {
+      // For super admins, use the provided hallOwnerId or default to current user
+      dataUserId = hallOwnerId || userId;
+    } else {
+      return res.status(403).json({ message: 'Access denied. Only hall owners, sub-users, and super admins can view reports.' });
     }
 
     const dateRanges = getDateRanges(period);
@@ -819,7 +956,7 @@ router.get('/summary', verifyToken, async (req, res) => {
     // Get all bookings for this hall owner
     const bookingsSnapshot = await admin.firestore()
       .collection('bookings')
-      .where('hallOwnerId', '==', userId)
+      .where('hallOwnerId', '==', dataUserId)
       .get();
 
     const allBookings = bookingsSnapshot.docs.map(doc => ({

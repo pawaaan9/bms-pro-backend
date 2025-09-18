@@ -75,7 +75,7 @@ router.get('/', async (req, res) => {
 // POST /api/users - Create a new user
 router.post('/', async (req, res) => {
   try {
-    const { email, password, role, hallName, contactNumber, address } = req.body;
+    const { email, password, role, hallName, contactNumber, address, parentUserId, permissions, name } = req.body;
 
     // Validate required fields
     if (!email || !password || !role) {
@@ -83,8 +83,21 @@ router.post('/', async (req, res) => {
     }
 
     // Validate role
-    if (!['hall_owner', 'super_admin'].includes(role)) {
-      return res.status(400).json({ message: 'Invalid role. Must be hall_owner or super_admin' });
+    if (!['hall_owner', 'super_admin', 'sub_user'].includes(role)) {
+      return res.status(400).json({ message: 'Invalid role. Must be hall_owner, super_admin, or sub_user' });
+    }
+
+    // For sub_users, validate parent user, permissions, and name
+    if (role === 'sub_user') {
+      if (!parentUserId) {
+        return res.status(400).json({ message: 'Parent user ID is required for sub-users' });
+      }
+      if (!permissions || !Array.isArray(permissions)) {
+        return res.status(400).json({ message: 'Permissions array is required for sub-users' });
+      }
+      if (!name || !name.trim()) {
+        return res.status(400).json({ message: 'Name is required for sub-users' });
+      }
     }
 
     // For hall owners, validate required fields
@@ -122,6 +135,14 @@ router.post('/', async (req, res) => {
         postcode: address.postcode,
         state: address.state
       };
+    }
+
+    // Add sub-user specific data
+    if (role === 'sub_user') {
+      userData.parentUserId = parentUserId;
+      userData.permissions = permissions;
+      userData.status = 'active';
+      userData.name = name.trim();
     }
 
     // Save user data to Firestore
@@ -293,6 +314,14 @@ router.get('/profile', verifyToken, async (req, res) => {
       updatedAt: userData.updatedAt
     };
 
+    // Add sub-user specific data
+    if (userData.role === 'sub_user') {
+      profile.parentUserId = userData.parentUserId;
+      profile.permissions = userData.permissions || [];
+      profile.status = userData.status || 'active';
+      profile.name = userData.name || '';
+    }
+
     console.log('Processed profile data:', JSON.stringify(profile, null, 2));
     res.json(profile);
 
@@ -369,6 +398,142 @@ router.post('/customers', async (req, res) => {
 
   } catch (error) {
     console.error('Error creating customer:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// GET /api/users/sub-users/:parentUserId - Get all sub-users for a hall owner
+router.get('/sub-users/:parentUserId', async (req, res) => {
+  try {
+    const { parentUserId } = req.params;
+    
+    const subUsersSnapshot = await admin.firestore()
+      .collection('users')
+      .where('parentUserId', '==', parentUserId)
+      .where('role', '==', 'sub_user')
+      .get();
+    
+    const subUsers = subUsersSnapshot.docs.map(doc => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        email: data.email,
+        name: data.name || '',
+        role: data.role,
+        permissions: data.permissions || [],
+        status: data.status || 'active',
+        createdAt: data.createdAt,
+        updatedAt: data.updatedAt
+      };
+    });
+    
+    res.json(subUsers);
+  } catch (error) {
+    console.error('Error fetching sub-users:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// PUT /api/users/sub-users/:id - Update sub-user permissions
+router.put('/sub-users/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { permissions, status, name } = req.body;
+
+    // Check if user exists and is a sub-user
+    const userDoc = await admin.firestore().collection('users').doc(id).get();
+    if (!userDoc.exists) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const userData = userDoc.data();
+    if (userData.role !== 'sub_user') {
+      return res.status(400).json({ message: 'User is not a sub-user' });
+    }
+
+    // Prepare update data
+    const updateData = {
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    };
+
+    if (permissions !== undefined) {
+      updateData.permissions = permissions;
+    }
+
+    if (status !== undefined) {
+      updateData.status = status;
+    }
+
+    if (name !== undefined && name.trim()) {
+      updateData.name = name.trim();
+    }
+
+    // Update user data in Firestore
+    await admin.firestore().collection('users').doc(id).update(updateData);
+
+    res.json({ 
+      message: 'Sub-user updated successfully',
+      uid: id
+    });
+
+  } catch (error) {
+    console.error('Error updating sub-user:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// GET /api/users/permissions - Get available permissions
+router.get('/permissions', async (req, res) => {
+  try {
+    const permissions = [
+      { id: 'dashboard', name: 'Dashboard', description: 'Access to dashboard overview' },
+      { id: 'calendar', name: 'Calendar', description: 'View and manage calendar' },
+      { id: 'bookings', name: 'Bookings', description: 'Manage all bookings' },
+      { id: 'invoices', name: 'Invoices & Payments', description: 'Manage invoices and payments' },
+      { id: 'resources', name: 'Resources', description: 'Manage hall resources' },
+      { id: 'pricing', name: 'Pricing', description: 'Manage pricing and rate cards' },
+      { id: 'customers', name: 'Customers', description: 'Manage customer information' },
+      { id: 'reports', name: 'Reports', description: 'View and generate reports' },
+      { id: 'comms', name: 'Comms', description: 'Manage communications' },
+      { id: 'settings', name: 'Settings', description: 'Access system settings' },
+      { id: 'audit', name: 'Audit Log', description: 'View audit logs' },
+      { id: 'help', name: 'Help', description: 'Access help documentation' }
+    ];
+
+    res.json(permissions);
+  } catch (error) {
+    console.error('Error fetching permissions:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// GET /api/users/parent-data/:parentUserId - Get parent user's data for sub-users
+router.get('/parent-data/:parentUserId', async (req, res) => {
+  try {
+    const { parentUserId } = req.params;
+    
+    // Get parent user data
+    const parentUserDoc = await admin.firestore().collection('users').doc(parentUserId).get();
+    
+    if (!parentUserDoc.exists) {
+      return res.status(404).json({ message: 'Parent user not found' });
+    }
+
+    const parentData = parentUserDoc.data();
+    
+    // Return parent user's hall information
+    const parentInfo = {
+      id: parentUserId,
+      email: parentData.email,
+      role: parentData.role,
+      hallName: parentData.hallName || (parentData.owner_profile?.hallName) || null,
+      contactNumber: parentData.contactNumber || (parentData.owner_profile?.contactNumber) || null,
+      address: parentData.address || (parentData.owner_profile?.address) || null
+    };
+
+    res.json(parentInfo);
+  } catch (error) {
+    console.error('Error fetching parent user data:', error);
     res.status(500).json({ message: error.message });
   }
 });
