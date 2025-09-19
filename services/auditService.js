@@ -319,6 +319,38 @@ class AuditService {
   }
 
   /**
+   * Log user settings update
+   */
+  static async logSettingsUpdated(updaterId, updaterEmail, updaterRole, settings, ipAddress, hallId) {
+    const changes = {};
+    
+    const fieldsToCompare = ['timezone', 'dateFormat', 'timeFormat', 'currency'];
+    
+    fieldsToCompare.forEach(field => {
+      if (settings[field] !== null && settings[field] !== undefined) {
+        changes[field] = {
+          new: settings[field]
+        };
+      }
+    });
+
+    if (Object.keys(changes).length > 0) {
+      await this.logEvent({
+        userId: updaterId,
+        userEmail: updaterEmail,
+        userRole: updaterRole,
+        action: 'settings_updated',
+        targetType: 'user',
+        target: 'User Settings',
+        changes,
+        ipAddress,
+        hallId,
+        additionalInfo: 'Updated user preferences'
+      });
+    }
+  }
+
+  /**
    * Log pricing events
    */
   static async logPricingUpdated(updaterId, updaterEmail, updaterRole, oldPricing, newPricing, ipAddress, hallId) {

@@ -194,6 +194,144 @@ router.post('/', async (req, res) => {
   }
 });
 
+// PUT /api/users/settings - Update user settings (timezone, date format, currency)
+router.put('/settings', verifyToken, async (req, res) => {
+  try {
+    const userId = req.user.uid;
+    const { timezone, dateFormat, timeFormat, currency } = req.body;
+    const ipAddress = req.ip || req.connection.remoteAddress || req.headers['x-forwarded-for'];
+
+    // Validate timezone
+    const validTimezones = [
+      'UTC', 'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles',
+      'Europe/London', 'Europe/Paris', 'Europe/Berlin', 'Europe/Rome', 'Europe/Madrid',
+      'Asia/Tokyo', 'Asia/Shanghai', 'Asia/Hong_Kong', 'Asia/Singapore', 'Asia/Kolkata',
+      'Australia/Sydney', 'Australia/Melbourne', 'Australia/Perth', 'Australia/Adelaide',
+      'Pacific/Auckland', 'Pacific/Fiji'
+    ];
+
+    if (timezone && !validTimezones.includes(timezone)) {
+      return res.status(400).json({ message: 'Invalid timezone' });
+    }
+
+    // Validate date format
+    const validDateFormats = ['MM/DD/YYYY', 'DD/MM/YYYY', 'YYYY-MM-DD'];
+    if (dateFormat && !validDateFormats.includes(dateFormat)) {
+      return res.status(400).json({ message: 'Invalid date format' });
+    }
+
+    // Validate time format
+    const validTimeFormats = ['12h', '24h'];
+    if (timeFormat && !validTimeFormats.includes(timeFormat)) {
+      return res.status(400).json({ message: 'Invalid time format' });
+    }
+
+    // Validate currency
+    const validCurrencies = ['USD', 'EUR', 'GBP', 'AUD', 'CAD', 'JPY', 'CNY', 'INR'];
+    if (currency && !validCurrencies.includes(currency)) {
+      return res.status(400).json({ message: 'Invalid currency' });
+    }
+
+    // Check if user exists
+    const userDoc = await admin.firestore().collection('users').doc(userId).get();
+    if (!userDoc.exists) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Get existing settings
+    const existingSettings = userDoc.data().settings || {};
+    
+    // Prepare new settings object
+    const newSettings = { ...existingSettings };
+    
+    // Add settings fields if provided
+    if (timezone !== undefined) {
+      newSettings.timezone = timezone;
+    }
+    if (dateFormat !== undefined) {
+      newSettings.dateFormat = dateFormat;
+    }
+    if (timeFormat !== undefined) {
+      newSettings.timeFormat = timeFormat;
+    }
+    if (currency !== undefined) {
+      newSettings.currency = currency;
+    }
+
+    // Prepare settings update
+    const settingsUpdate = {
+      settings: newSettings,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    };
+
+    // Update user settings in Firestore
+    await admin.firestore().collection('users').doc(userId).update(settingsUpdate);
+
+    // Log settings update
+    const AuditService = require('../services/auditService');
+    const hallId = req.user?.hallId || 
+                   (req.user?.role === 'hall_owner' ? req.user?.uid : null) ||
+                   (req.user?.role === 'sub_user' && req.user?.parentUserId ? req.user?.parentUserId : null);
+    
+    await AuditService.logSettingsUpdated(
+      req.user?.uid || 'system',
+      req.user?.email || 'system',
+      req.user?.role || 'system',
+      {
+        timezone: timezone || null,
+        dateFormat: dateFormat || null,
+        timeFormat: timeFormat || null,
+        currency: currency || null
+      },
+      ipAddress,
+      hallId
+    );
+
+    res.json({ 
+      message: 'Settings updated successfully',
+      settings: newSettings
+    });
+
+  } catch (error) {
+    console.error('Error updating user settings:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// GET /api/users/settings - Get user settings
+router.get('/settings', verifyToken, async (req, res) => {
+  try {
+    const userId = req.user.uid;
+    
+    // Get user data from Firestore
+    const userDoc = await admin.firestore().collection('users').doc(userId).get();
+    
+    if (!userDoc.exists) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const userData = userDoc.data();
+    const settings = userData.settings || {};
+
+    // Return default settings if none exist
+    const defaultSettings = {
+      timezone: 'Australia/Sydney',
+      dateFormat: 'DD/MM/YYYY',
+      timeFormat: '12h',
+      currency: 'AUD'
+    };
+
+    res.json({
+      ...defaultSettings,
+      ...settings
+    });
+
+  } catch (error) {
+    console.error('Error fetching user settings:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
 // PUT /api/users/:id - Update a user
 router.put('/:id', async (req, res) => {
   try {
