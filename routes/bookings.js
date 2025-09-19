@@ -40,6 +40,7 @@ const verifyToken = async (req, res, next) => {
 // POST /api/bookings - Create a new booking (public endpoint for customers)
 router.post('/', async (req, res) => {
   try {
+    const ipAddress = req.ip || req.connection.remoteAddress || req.headers['x-forwarded-for'];
     const {
       customerId,
       customerName,
@@ -253,6 +254,23 @@ router.post('/', async (req, res) => {
       bookingSource: bookingSource || 'website'
     });
 
+    // Log booking creation
+    const AuditService = require('../services/auditService');
+    await AuditService.logBookingCreated(
+      'customer', // For public bookings, we don't have a specific user ID
+      customerEmail,
+      'customer',
+      {
+        id: docRef.id,
+        customerName: customerName,
+        eventDate: bookingDate,
+        status: 'pending',
+        totalAmount: estimatedPrice || 0
+      },
+      ipAddress,
+      hallOwnerId
+    );
+
     // Get the created booking with ID
     const createdBooking = {
       id: docRef.id,
@@ -373,6 +391,7 @@ router.put('/:id/status', verifyToken, async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
     const userId = req.user.uid;
+    const ipAddress = req.ip || req.connection.remoteAddress || req.headers['x-forwarded-for'];
 
     // Validate status
     if (!['pending', 'confirmed', 'cancelled', 'completed'].includes(status)) {
@@ -388,6 +407,7 @@ router.put('/:id/status', verifyToken, async (req, res) => {
     }
 
     const bookingData = bookingDoc.data();
+    const oldBookingData = { ...bookingData };
     
     // Verify the authenticated user is the hall owner
     if (bookingData.hallOwnerId !== userId) {
@@ -410,6 +430,44 @@ router.put('/:id/status', verifyToken, async (req, res) => {
       status: status,
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     });
+
+    // Log booking status update
+    const AuditService = require('../services/auditService');
+    const newBookingData = { ...oldBookingData, status: status };
+    const hallId = userData.hallId || 
+                   (userData.role === 'hall_owner' ? userId : null) ||
+                   (userData.role === 'sub_user' && userData.parentUserId ? userData.parentUserId : null);
+    
+    if (status === 'confirmed') {
+      await AuditService.logBookingConfirmed(
+        userId,
+        req.user.email,
+        userData.role,
+        { ...bookingData, status: status },
+        ipAddress,
+        hallId
+      );
+    } else if (status === 'cancelled') {
+      await AuditService.logBookingCancelled(
+        userId,
+        req.user.email,
+        userData.role,
+        oldBookingData,
+        'Status updated by hall owner',
+        ipAddress,
+        hallId
+      );
+    } else {
+      await AuditService.logBookingUpdated(
+        userId,
+        req.user.email,
+        userData.role,
+        oldBookingData,
+        newBookingData,
+        ipAddress,
+        hallId
+      );
+    }
 
     // Create notification for the customer if they have a customerId
     if (bookingData.customerId) {

@@ -2,11 +2,13 @@ const express = require('express');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
 const admin = require('./firebaseAdmin');
+const { captureIP } = require('./middleware/auditMiddleware');
 require('dotenv').config();
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+app.use(captureIP); // Capture IP addresses for all requests
 
 
 // Auth routes
@@ -41,9 +43,15 @@ app.use('/api/dashboard', dashboardRoutes);
 const reportsRoutes = require('./routes/reports');
 app.use('/api/reports', reportsRoutes);
 
+// Audit routes
+const auditRoutes = require('./routes/audit');
+app.use('/api/audit', auditRoutes);
+
 // Login endpoint (returns JWT token)
 app.post('/api/login', async (req, res) => {
   const { email, password } = req.body;
+  const ipAddress = req.ip || req.connection.remoteAddress || req.headers['x-forwarded-for'];
+  
   if (!email || !password) {
     return res.status(400).json({ message: 'Missing fields' });
   }
@@ -69,6 +77,20 @@ app.post('/api/login', async (req, res) => {
       },
       process.env.JWT_SECRET || 'your-secret-key',
       { expiresIn: '24h' }
+    );
+    
+    // Log successful login
+    const AuditService = require('./services/auditService');
+    const hallId = userData.hallId || 
+                   (userData.role === 'hall_owner' ? user.uid : null) ||
+                   (userData.role === 'sub_user' && userData.parentUserId ? userData.parentUserId : null);
+    
+    await AuditService.logUserLogin(
+      user.uid,
+      email,
+      userData.role,
+      ipAddress,
+      hallId
     );
     
     res.json({ token, role: userData.role });

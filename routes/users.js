@@ -76,6 +76,7 @@ router.get('/', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     const { email, password, role, hallName, contactNumber, address, parentUserId, permissions, name } = req.body;
+    const ipAddress = req.ip || req.connection.remoteAddress || req.headers['x-forwarded-for'];
 
     // Validate required fields
     if (!email || !password || !role) {
@@ -148,6 +149,26 @@ router.post('/', async (req, res) => {
     // Save user data to Firestore
     await admin.firestore().collection('users').doc(userRecord.uid).set(userData);
 
+    // Log user creation
+    const AuditService = require('../services/auditService');
+    const hallId = req.user?.hallId || 
+                   (req.user?.role === 'hall_owner' ? req.user?.uid : null) ||
+                   (req.user?.role === 'sub_user' && req.user?.parentUserId ? req.user?.parentUserId : null);
+    
+    await AuditService.logUserCreated(
+      req.user?.uid || 'system',
+      req.user?.email || 'system',
+      req.user?.role || 'system',
+      {
+        email: userRecord.email,
+        role: role,
+        name: name || '',
+        hallName: hallName || ''
+      },
+      ipAddress,
+      hallId
+    );
+
     res.status(201).json({ 
       message: 'User created successfully',
       uid: userRecord.uid,
@@ -178,6 +199,7 @@ router.put('/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const { email, role, hallName, contactNumber, address } = req.body;
+    const ipAddress = req.ip || req.connection.remoteAddress || req.headers['x-forwarded-for'];
 
     // Validate required fields
     if (!email || !role) {
@@ -203,6 +225,8 @@ router.put('/:id', async (req, res) => {
     if (!userDoc.exists) {
       return res.status(404).json({ message: 'User not found' });
     }
+
+    const oldUserData = userDoc.data();
 
     // Prepare user data for Firestore
     const userData = {
@@ -238,6 +262,29 @@ router.put('/:id', async (req, res) => {
       await admin.auth().updateUser(id, { email: email });
     }
 
+    // Log user update
+    const AuditService = require('../services/auditService');
+    const hallId = req.user?.hallId || 
+                   (req.user?.role === 'hall_owner' ? req.user?.uid : null) ||
+                   (req.user?.role === 'sub_user' && req.user?.parentUserId ? req.user?.parentUserId : null);
+    
+    await AuditService.logUserUpdated(
+      req.user?.uid || 'system',
+      req.user?.email || 'system',
+      req.user?.role || 'system',
+      oldUserData,
+      {
+        ...oldUserData,
+        email: email,
+        role: role,
+        hallName: hallName || oldUserData.hallName,
+        contactNumber: contactNumber || oldUserData.contactNumber,
+        address: address || oldUserData.address
+      },
+      ipAddress,
+      hallId
+    );
+
     res.json({ 
       message: 'User updated successfully',
       uid: id,
@@ -264,6 +311,7 @@ router.put('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   try {
     const { id } = req.params;
+    const ipAddress = req.ip || req.connection.remoteAddress || req.headers['x-forwarded-for'];
 
     // Check if user exists
     const userDoc = await admin.firestore().collection('users').doc(id).get();
@@ -271,11 +319,28 @@ router.delete('/:id', async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
+    const userData = userDoc.data();
+
     // Delete user from Firebase Auth
     await admin.auth().deleteUser(id);
 
     // Delete user data from Firestore
     await admin.firestore().collection('users').doc(id).delete();
+
+    // Log user deletion
+    const AuditService = require('../services/auditService');
+    const hallId = req.user?.hallId || 
+                   (req.user?.role === 'hall_owner' ? req.user?.uid : null) ||
+                   (req.user?.role === 'sub_user' && req.user?.parentUserId ? req.user?.parentUserId : null);
+    
+    await AuditService.logUserDeleted(
+      req.user?.uid || 'system',
+      req.user?.email || 'system',
+      req.user?.role || 'system',
+      userData,
+      ipAddress,
+      hallId
+    );
 
     res.json({ message: 'User deleted successfully' });
 
