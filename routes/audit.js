@@ -117,7 +117,7 @@ router.get('/', verifyToken, checkAuditPermission, async (req, res) => {
         log.userRole === 'system'
       );
     } else if (req.userRole === 'hall_owner') {
-      // Hall owners see only their sub-users' logs (not their own)
+      // Hall owners see their own logs AND their sub-users' logs
       const hallOwnerId = req.userData.id; // Hall owner's own UID
       
       // First, get all sub-users that belong to this hall owner
@@ -128,10 +128,12 @@ router.get('/', verifyToken, checkAuditPermission, async (req, res) => {
       
       const subUserIds = subUsersSnapshot.docs.map(doc => doc.id);
       
-      // Filter audit logs to show only sub-users' activities
+      // Filter audit logs to show hall owner's own activities AND sub-users' activities
       auditLogs = auditLogs.filter(log => 
-        subUserIds.includes(log.userId) && 
-        log.userRole === 'sub_user'
+        // Hall owner's own logs
+        (log.userId === hallOwnerId && log.userRole === 'hall_owner') ||
+        // Sub-users' logs
+        (subUserIds.includes(log.userId) && log.userRole === 'sub_user')
       );
     } else if (req.userRole === 'sub_user') {
       // Sub-users see their own logs only
@@ -281,7 +283,7 @@ router.get('/stats', verifyToken, checkAuditPermission, async (req, res) => {
         log.userRole === 'system'
       );
     } else if (req.userRole === 'hall_owner') {
-      // Hall owners see only their sub-users' logs (not their own)
+      // Hall owners see their own logs AND their sub-users' logs
       const hallOwnerId = req.userData.id; // Hall owner's own UID
       
       // First, get all sub-users that belong to this hall owner
@@ -292,10 +294,12 @@ router.get('/stats', verifyToken, checkAuditPermission, async (req, res) => {
       
       const subUserIds = subUsersSnapshot.docs.map(doc => doc.id);
       
-      // Filter audit logs to show only sub-users' activities
+      // Filter audit logs to show hall owner's own activities AND sub-users' activities
       auditLogs = auditLogs.filter(log => 
-        subUserIds.includes(log.userId) && 
-        log.userRole === 'sub_user'
+        // Hall owner's own logs
+        (log.userId === hallOwnerId && log.userRole === 'hall_owner') ||
+        // Sub-users' logs
+        (subUserIds.includes(log.userId) && log.userRole === 'sub_user')
       );
     } else if (req.userRole === 'sub_user') {
       // Sub-users see their own logs only
