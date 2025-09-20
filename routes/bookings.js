@@ -7,6 +7,50 @@ const router = express.Router();
 // Helper function to create notification and send email
 async function createNotificationAndSendEmail(userId, userEmail, notificationData) {
   try {
+    // Check if a similar notification already exists to prevent duplicates
+    // Using a simpler query that doesn't require composite indexes
+    let existingNotification = null;
+    
+    try {
+      const existingNotifications = await admin.firestore()
+        .collection('notifications')
+        .where('userId', '==', userId)
+        .where('type', '==', notificationData.type)
+        .limit(10) // Get a few recent notifications of this type
+        .get();
+
+      // Check if any of these notifications have the same bookingId
+      existingNotifications.docs.forEach(doc => {
+        const data = doc.data();
+        if (data.data?.bookingId === notificationData.data?.bookingId) {
+          existingNotification = doc;
+        }
+      });
+    } catch (indexError) {
+      console.log('Index query failed, using alternative duplicate check:', indexError.message);
+      
+      // Fallback: Get recent notifications for this user and check manually
+      const recentNotifications = await admin.firestore()
+        .collection('notifications')
+        .where('userId', '==', userId)
+        .orderBy('createdAt', 'desc')
+        .limit(20)
+        .get();
+
+      recentNotifications.docs.forEach(doc => {
+        const data = doc.data();
+        if (data.type === notificationData.type && 
+            data.data?.bookingId === notificationData.data?.bookingId) {
+          existingNotification = doc;
+        }
+      });
+    }
+
+    if (existingNotification) {
+      console.log('Duplicate notification prevented for booking:', notificationData.data?.bookingId);
+      return existingNotification.id;
+    }
+
     // Create notification in Firestore
     const notificationDoc = await admin.firestore().collection('notifications').add({
       userId: userId,
@@ -317,6 +361,14 @@ router.post('/', async (req, res) => {
     // Create notification and send email for the customer if they have a customerId (from Cranbourne website)
     if (customerId && customerEmail) {
       try {
+        console.log('Creating notification for booking:', {
+          customerId,
+          customerEmail,
+          bookingId: docRef.id,
+          eventType,
+          bookingDate
+        });
+
         const priceMessage = calculatedPrice ? ` Estimated cost: $${calculatedPrice.toFixed(2)}.` : '';
         
         const notificationData = {
@@ -334,8 +386,12 @@ router.post('/', async (req, res) => {
           }
         };
 
-        await createNotificationAndSendEmail(customerId, customerEmail, notificationData);
-        console.log('Notification and email sent for customer booking submission:', customerId);
+        const notificationId = await createNotificationAndSendEmail(customerId, customerEmail, notificationData);
+        console.log('Notification and email sent for customer booking submission:', {
+          customerId,
+          notificationId,
+          bookingId: docRef.id
+        });
       } catch (notificationError) {
         console.error('Error creating booking submission notification:', notificationError);
         // Don't fail the booking creation if notification creation fails
