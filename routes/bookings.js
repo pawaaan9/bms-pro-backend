@@ -420,28 +420,44 @@ router.get('/hall-owner/:hallOwnerId', verifyToken, async (req, res) => {
     console.log('Extracted userId:', userId);
     console.log('Requested hallOwnerId:', hallOwnerId);
 
-    // Verify the authenticated user is the hall owner
-    if (userId !== hallOwnerId) {
-      console.log('User ID mismatch:', { userId, hallOwnerId });
-      return res.status(403).json({ message: 'Access denied. You can only view your own bookings.' });
-    }
-
-    // Get user data to verify they are a hall_owner
+    // Get user data to verify they are a hall_owner or sub_user
     const userDoc = await admin.firestore().collection('users').doc(userId).get();
     if (!userDoc.exists) {
       return res.status(404).json({ message: 'User not found' });
     }
 
     const userData = userDoc.data();
-    if (userData.role !== 'hall_owner') {
-      return res.status(403).json({ message: 'Access denied. Only hall owners can view bookings.' });
+    
+    // Determine the actual hall owner ID
+    let actualHallOwnerId = hallOwnerId;
+    
+    if (userData.role === 'sub_user') {
+      // For sub_users, use their parent user ID as the hall owner ID
+      if (!userData.parentUserId) {
+        return res.status(403).json({ message: 'Access denied. Sub-user has no parent hall owner.' });
+      }
+      actualHallOwnerId = userData.parentUserId;
+      
+      // Verify the sub_user is trying to access their parent's data
+      if (actualHallOwnerId !== hallOwnerId) {
+        console.log('Sub-user parent ID mismatch:', { actualHallOwnerId, hallOwnerId });
+        return res.status(403).json({ message: 'Access denied. You can only view your parent hall owner\'s bookings.' });
+      }
+    } else if (userData.role === 'hall_owner') {
+      // For hall_owners, verify they are accessing their own data
+      if (userId !== hallOwnerId) {
+        console.log('User ID mismatch:', { userId, hallOwnerId });
+        return res.status(403).json({ message: 'Access denied. You can only view your own bookings.' });
+      }
+    } else {
+      return res.status(403).json({ message: 'Access denied. Only hall owners and sub-users can view bookings.' });
     }
 
     // Get all bookings for this hall owner
-    console.log('Fetching bookings for hallOwnerId:', hallOwnerId);
+    console.log('Fetching bookings for hallOwnerId:', actualHallOwnerId);
     const bookingsSnapshot = await admin.firestore()
       .collection('bookings')
-      .where('hallOwnerId', '==', hallOwnerId)
+      .where('hallOwnerId', '==', actualHallOwnerId)
       .get();
 
     console.log('Found', bookingsSnapshot.docs.length, 'bookings');
@@ -500,20 +516,35 @@ router.put('/:id/status', verifyToken, async (req, res) => {
     const bookingData = bookingDoc.data();
     const oldBookingData = { ...bookingData };
     
-    // Verify the authenticated user is the hall owner
-    if (bookingData.hallOwnerId !== userId) {
-      return res.status(403).json({ message: 'Access denied. You can only update your own bookings.' });
-    }
-
-    // Get user data to verify they are a hall_owner
+    // Get user data to verify they are a hall_owner or sub_user
     const userDoc = await admin.firestore().collection('users').doc(userId).get();
     if (!userDoc.exists) {
       return res.status(404).json({ message: 'User not found' });
     }
 
     const userData = userDoc.data();
-    if (userData.role !== 'hall_owner') {
-      return res.status(403).json({ message: 'Access denied. Only hall owners can update booking status.' });
+    
+    // Determine the actual hall owner ID
+    let actualHallOwnerId = bookingData.hallOwnerId;
+    
+    if (userData.role === 'sub_user') {
+      // For sub_users, verify they belong to the same hall owner
+      if (!userData.parentUserId) {
+        return res.status(403).json({ message: 'Access denied. Sub-user has no parent hall owner.' });
+      }
+      actualHallOwnerId = userData.parentUserId;
+      
+      // Verify the sub_user is trying to update their parent's booking
+      if (actualHallOwnerId !== bookingData.hallOwnerId) {
+        return res.status(403).json({ message: 'Access denied. You can only update your parent hall owner\'s bookings.' });
+      }
+    } else if (userData.role === 'hall_owner') {
+      // For hall_owners, verify they are updating their own booking
+      if (bookingData.hallOwnerId !== userId) {
+        return res.status(403).json({ message: 'Access denied. You can only update your own bookings.' });
+      }
+    } else {
+      return res.status(403).json({ message: 'Access denied. Only hall owners and sub-users can update booking status.' });
     }
 
     // Update booking status
@@ -525,9 +556,7 @@ router.put('/:id/status', verifyToken, async (req, res) => {
     // Log booking status update
     const AuditService = require('../services/auditService');
     const newBookingData = { ...oldBookingData, status: status };
-    const hallId = userData.hallId || 
-                   (userData.role === 'hall_owner' ? userId : null) ||
-                   (userData.role === 'sub_user' && userData.parentUserId ? userData.parentUserId : null);
+    const hallId = actualHallOwnerId;
     
     if (status === 'confirmed') {
       await AuditService.logBookingConfirmed(
@@ -642,20 +671,35 @@ router.put('/:id/price', verifyToken, async (req, res) => {
 
     const bookingData = bookingDoc.data();
     
-    // Verify the authenticated user is the hall owner
-    if (bookingData.hallOwnerId !== userId) {
-      return res.status(403).json({ message: 'Access denied. You can only update your own bookings.' });
-    }
-
-    // Get user data to verify they are a hall_owner
+    // Get user data to verify they are a hall_owner or sub_user
     const userDoc = await admin.firestore().collection('users').doc(userId).get();
     if (!userDoc.exists) {
       return res.status(404).json({ message: 'User not found' });
     }
 
     const userData = userDoc.data();
-    if (userData.role !== 'hall_owner') {
-      return res.status(403).json({ message: 'Access denied. Only hall owners can update booking prices.' });
+    
+    // Determine the actual hall owner ID
+    let actualHallOwnerId = bookingData.hallOwnerId;
+    
+    if (userData.role === 'sub_user') {
+      // For sub_users, verify they belong to the same hall owner
+      if (!userData.parentUserId) {
+        return res.status(403).json({ message: 'Access denied. Sub-user has no parent hall owner.' });
+      }
+      actualHallOwnerId = userData.parentUserId;
+      
+      // Verify the sub_user is trying to update their parent's booking
+      if (actualHallOwnerId !== bookingData.hallOwnerId) {
+        return res.status(403).json({ message: 'Access denied. You can only update your parent hall owner\'s bookings.' });
+      }
+    } else if (userData.role === 'hall_owner') {
+      // For hall_owners, verify they are updating their own booking
+      if (bookingData.hallOwnerId !== userId) {
+        return res.status(403).json({ message: 'Access denied. You can only update your own bookings.' });
+      }
+    } else {
+      return res.status(403).json({ message: 'Access denied. Only hall owners and sub-users can update booking prices.' });
     }
 
     // Prepare update data
@@ -723,20 +767,35 @@ router.get('/:id', verifyToken, async (req, res) => {
 
     const bookingData = bookingDoc.data();
     
-    // Verify the authenticated user is the hall owner
-    if (bookingData.hallOwnerId !== userId) {
-      return res.status(403).json({ message: 'Access denied. You can only view your own bookings.' });
-    }
-
-    // Get user data to verify they are a hall_owner
+    // Get user data to verify they are a hall_owner or sub_user
     const userDoc = await admin.firestore().collection('users').doc(userId).get();
     if (!userDoc.exists) {
       return res.status(404).json({ message: 'User not found' });
     }
 
     const userData = userDoc.data();
-    if (userData.role !== 'hall_owner') {
-      return res.status(403).json({ message: 'Access denied. Only hall owners can view bookings.' });
+    
+    // Determine the actual hall owner ID
+    let actualHallOwnerId = bookingData.hallOwnerId;
+    
+    if (userData.role === 'sub_user') {
+      // For sub_users, verify they belong to the same hall owner
+      if (!userData.parentUserId) {
+        return res.status(403).json({ message: 'Access denied. Sub-user has no parent hall owner.' });
+      }
+      actualHallOwnerId = userData.parentUserId;
+      
+      // Verify the sub_user is trying to view their parent's booking
+      if (actualHallOwnerId !== bookingData.hallOwnerId) {
+        return res.status(403).json({ message: 'Access denied. You can only view your parent hall owner\'s bookings.' });
+      }
+    } else if (userData.role === 'hall_owner') {
+      // For hall_owners, verify they are viewing their own booking
+      if (bookingData.hallOwnerId !== userId) {
+        return res.status(403).json({ message: 'Access denied. You can only view your own bookings.' });
+      }
+    } else {
+      return res.status(403).json({ message: 'Access denied. Only hall owners and sub-users can view bookings.' });
     }
 
     res.json({
