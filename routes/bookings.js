@@ -1,7 +1,42 @@
 const express = require('express');
 const admin = require('../firebaseAdmin');
+const emailService = require('../services/emailService');
 
 const router = express.Router();
+
+// Helper function to create notification and send email
+async function createNotificationAndSendEmail(userId, userEmail, notificationData) {
+  try {
+    // Create notification in Firestore
+    const notificationDoc = await admin.firestore().collection('notifications').add({
+      userId: userId,
+      type: notificationData.type,
+      title: notificationData.title,
+      message: notificationData.message,
+      data: notificationData.data || null,
+      isRead: false,
+      createdAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    console.log('Notification created:', notificationDoc.id);
+
+    // Send email notification if user email is provided
+    if (userEmail) {
+      try {
+        await emailService.sendNotificationEmail(notificationData, userEmail);
+        console.log('Email sent successfully to:', userEmail);
+      } catch (emailError) {
+        console.error('Failed to send email to:', userEmail, emailError.message);
+        // Don't fail the notification creation if email fails
+      }
+    }
+
+    return notificationDoc.id;
+  } catch (error) {
+    console.error('Error creating notification:', error);
+    throw error;
+  }
+}
 
 // Middleware to verify token (for hall owner operations)
 const verifyToken = async (req, res, next) => {
@@ -279,28 +314,28 @@ router.post('/', async (req, res) => {
       updatedAt: new Date()
     };
 
-    // Create notification for the customer if they have a customerId (from Cranbourne website)
-    if (customerId) {
+    // Create notification and send email for the customer if they have a customerId (from Cranbourne website)
+    if (customerId && customerEmail) {
       try {
         const priceMessage = calculatedPrice ? ` Estimated cost: $${calculatedPrice.toFixed(2)}.` : '';
         
-        await admin.firestore().collection('notifications').add({
-          userId: customerId,
+        const notificationData = {
           type: 'booking_submitted',
           title: 'Booking Request Submitted',
           message: `Your booking request for ${eventType} on ${bookingDate} has been submitted successfully.${priceMessage} We'll get back to you soon with confirmation.`,
           data: {
             bookingId: docRef.id,
             eventType: eventType,
-            date: bookingDate,
-            estimatedPrice: calculatedPrice,
+            bookingDate: bookingDate,
+            startTime: startTime,
+            endTime: endTime,
+            calculatedPrice: calculatedPrice,
             hallName: hallData.name
-          },
-          isRead: false,
-          createdAt: admin.firestore.FieldValue.serverTimestamp()
-        });
+          }
+        };
 
-        console.log('Notification created for customer booking submission:', customerId);
+        await createNotificationAndSendEmail(customerId, customerEmail, notificationData);
+        console.log('Notification and email sent for customer booking submission:', customerId);
       } catch (notificationError) {
         console.error('Error creating booking submission notification:', notificationError);
         // Don't fail the booking creation if notification creation fails
@@ -469,8 +504,8 @@ router.put('/:id/status', verifyToken, async (req, res) => {
       );
     }
 
-    // Create notification for the customer if they have a customerId
-    if (bookingData.customerId) {
+    // Create notification and send email for the customer if they have a customerId
+    if (bookingData.customerId && bookingData.customerEmail) {
       try {
         let notificationTitle = '';
         let notificationMessage = '';
@@ -493,23 +528,24 @@ router.put('/:id/status', verifyToken, async (req, res) => {
             notificationMessage = `Your booking for ${bookingData.eventType} on ${bookingData.bookingDate} status has been updated to ${status}.`;
         }
 
-        await admin.firestore().collection('notifications').add({
-          userId: bookingData.customerId,
+        const notificationData = {
           type: `booking_${status}`,
           title: notificationTitle,
           message: notificationMessage,
           data: {
             bookingId: id,
             eventType: bookingData.eventType,
-            date: bookingData.bookingDate,
+            bookingDate: bookingData.bookingDate,
+            startTime: bookingData.startTime,
+            endTime: bookingData.endTime,
             status: status,
-            hallName: bookingData.hallName
-          },
-          isRead: false,
-          createdAt: admin.firestore.FieldValue.serverTimestamp()
-        });
+            hallName: bookingData.hallName,
+            calculatedPrice: bookingData.calculatedPrice
+          }
+        };
 
-        console.log('Notification created for customer:', bookingData.customerId);
+        await createNotificationAndSendEmail(bookingData.customerId, bookingData.customerEmail, notificationData);
+        console.log('Notification and email sent for customer status update:', bookingData.customerId);
       } catch (notificationError) {
         console.error('Error creating notification:', notificationError);
         // Don't fail the booking update if notification creation fails
@@ -578,27 +614,27 @@ router.put('/:id/price', verifyToken, async (req, res) => {
     // Update booking price
     await admin.firestore().collection('bookings').doc(id).update(updateData);
 
-    // Create notification for the customer if they have a customerId and price was updated
-    if (bookingData.customerId && calculatedPrice !== undefined) {
+    // Create notification and send email for the customer if they have a customerId and price was updated
+    if (bookingData.customerId && bookingData.customerEmail && calculatedPrice !== undefined) {
       try {
-        await admin.firestore().collection('notifications').add({
-          userId: bookingData.customerId,
+        const notificationData = {
           type: 'booking_price_updated',
           title: 'Booking Price Updated',
           message: `The price for your ${bookingData.eventType} booking on ${bookingData.bookingDate} has been updated to $${calculatedPrice.toFixed(2)}. Please review the updated pricing details.`,
           data: {
             bookingId: id,
             eventType: bookingData.eventType,
-            date: bookingData.bookingDate,
-            newPrice: calculatedPrice,
+            bookingDate: bookingData.bookingDate,
+            startTime: bookingData.startTime,
+            endTime: bookingData.endTime,
+            calculatedPrice: calculatedPrice,
             previousPrice: bookingData.calculatedPrice,
             hallName: bookingData.hallName
-          },
-          isRead: false,
-          createdAt: admin.firestore.FieldValue.serverTimestamp()
-        });
+          }
+        };
 
-        console.log('Price update notification created for customer:', bookingData.customerId);
+        await createNotificationAndSendEmail(bookingData.customerId, bookingData.customerEmail, notificationData);
+        console.log('Price update notification and email sent for customer:', bookingData.customerId);
       } catch (notificationError) {
         console.error('Error creating price update notification:', notificationError);
         // Don't fail the price update if notification creation fails
@@ -778,6 +814,30 @@ router.get('/test', (req, res) => {
     timestamp: new Date().toISOString(),
     status: 'OK'
   });
+});
+
+// Test route for email functionality
+router.post('/test-email', async (req, res) => {
+  try {
+    const { email } = req.body;
+    
+    if (!email) {
+      return res.status(400).json({ message: 'Email address is required' });
+    }
+
+    await emailService.sendTestEmail(email);
+    
+    res.json({
+      message: 'Test email sent successfully',
+      recipient: email
+    });
+  } catch (error) {
+    console.error('Test email error:', error);
+    res.status(500).json({ 
+      message: 'Failed to send test email',
+      error: error.message 
+    });
+  }
 });
 
 module.exports = router;
