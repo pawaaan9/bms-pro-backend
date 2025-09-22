@@ -47,6 +47,14 @@ app.use('/api/reports', reportsRoutes);
 const auditRoutes = require('./routes/audit');
 app.use('/api/audit', auditRoutes);
 
+// Email Templates routes
+const emailTemplatesRoutes = require('./routes/emailTemplates');
+app.use('/api/email-templates', emailTemplatesRoutes);
+
+// Email Communications routes
+const emailCommsRoutes = require('./routes/emailComms');
+app.use('/api/email-comms', emailCommsRoutes);
+
 // Login endpoint (returns JWT token)
 app.post('/api/login', async (req, res) => {
   const { email, password } = req.body;

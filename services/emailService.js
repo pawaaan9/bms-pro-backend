@@ -203,6 +203,106 @@ class EmailService {
     `;
   }
 
+  async sendCustomizedEmail(emailData) {
+    try {
+      const { to, subject, body, recipientName, bookingId, templateName, isCustom } = emailData;
+      
+      // Generate email content with enhanced template
+      const emailContent = this.generateCustomizedEmailContent({
+        subject,
+        body,
+        recipientName,
+        bookingId,
+        templateName,
+        isCustom
+      });
+      
+      const mailOptions = {
+        from: 'pawankanchana34741@gmail.com',
+        to: to,
+        subject: emailContent.subject,
+        html: emailContent.html,
+        text: emailContent.text
+      };
+
+      const result = await this.transporter.sendMail(mailOptions);
+      console.log('✅ Customized email sent successfully:', result.messageId);
+      return result;
+    } catch (error) {
+      console.error('❌ Failed to send customized email:', error);
+      throw error;
+    }
+  }
+
+  generateCustomizedEmailContent({ subject, body, recipientName, bookingId, templateName, isCustom }) {
+    const logoUrl = 'https://via.placeholder.com/200x80/4F46E5/FFFFFF?text=Cranbourne+Hall';
+    
+    // Create a more flexible template for customized emails
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Cranbourne Public Hall - ${subject}</title>
+      </head>
+      <body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f1f5f9;">
+        <div style="max-width: 600px; margin: 0 auto; background-color: white; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+          <!-- Header -->
+          <div style="background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%); padding: 40px 20px; text-align: center;">
+            <img src="${logoUrl}" alt="Cranbourne Public Hall" style="max-width: 200px; height: auto;">
+            <h1 style="color: white; margin: 20px 0 0 0; font-size: 24px; font-weight: 600;">Cranbourne Public Hall</h1>
+          </div>
+          
+          <!-- Content -->
+          <div style="padding: 40px 30px;">
+            <h2 style="color: #1e293b; margin: 0 0 20px 0; font-size: 28px; font-weight: 700;">${subject}</h2>
+            
+            <div style="color: #475569; line-height: 1.6; font-size: 16px; margin-bottom: 20px;">
+              ${this.formatEmailBody(body)}
+            </div>
+            
+            <div style="border-top: 1px solid #e2e8f0; margin-top: 40px; padding-top: 30px; text-align: center;">
+              <p style="color: #64748b; font-size: 14px; margin: 0 0 10px 0;">
+                Thank you for choosing Cranbourne Public Hall!
+              </p>
+              <p style="color: #64748b; font-size: 14px; margin: 0;">
+                If you have any questions, please don't hesitate to contact us.
+              </p>
+            </div>
+          </div>
+          
+          <!-- Footer -->
+          <div style="background-color: #f8fafc; padding: 30px; text-align: center; border-top: 1px solid #e2e8f0;">
+            <p style="color: #64748b; font-size: 12px; margin: 0 0 10px 0;">
+              Cranbourne Public Hall Management System
+            </p>
+            <p style="color: #64748b; font-size: 12px; margin: 0;">
+              ${isCustom ? 'This is a custom message from our team.' : `Template: ${templateName || 'Custom'}`}
+            </p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+
+    return {
+      subject: `Cranbourne Public Hall - ${subject}`,
+      text: body,
+      html: htmlContent
+    };
+  }
+
+  formatEmailBody(body) {
+    if (!body) return '';
+    
+    // Convert line breaks to HTML
+    return body
+      .replace(/\n/g, '<br>')
+      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.*?)\*/g, '<em>$1</em>');
+  }
+
   async sendTestEmail(toEmail) {
     try {
       const testNotification = {
