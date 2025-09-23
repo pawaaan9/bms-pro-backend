@@ -513,6 +513,127 @@ class AuditService {
       additionalInfo: `Generated ${reportType} report`
     });
   }
+
+  // Invoice audit methods
+  static async logInvoiceCreated(creatorId, creatorEmail, creatorRole, invoice, ipAddress, hallId) {
+    await this.logEvent({
+      userId: creatorId,
+      userEmail: creatorEmail,
+      userRole: creatorRole,
+      action: 'invoice_created',
+      targetType: 'invoice',
+      target: `Invoice: ${invoice.invoiceNumber}`,
+      changes: {
+        new: {
+          invoiceId: invoice.id,
+          invoiceNumber: invoice.invoiceNumber,
+          bookingId: invoice.bookingId,
+          invoiceType: invoice.invoiceType,
+          total: invoice.total
+        }
+      },
+      ipAddress,
+      hallId,
+      additionalInfo: `Created ${invoice.invoiceType} invoice for booking ${invoice.bookingId}`
+    });
+  }
+
+  static async logInvoiceUpdated(updaterId, updaterEmail, updaterRole, oldInvoice, newInvoice, ipAddress, hallId) {
+    await this.logEvent({
+      userId: updaterId,
+      userEmail: updaterEmail,
+      userRole: updaterRole,
+      action: 'invoice_updated',
+      targetType: 'invoice',
+      target: `Invoice: ${newInvoice.invoiceNumber || oldInvoice.invoiceNumber}`,
+      changes: {
+        old: {
+          status: oldInvoice.status,
+          paidAmount: oldInvoice.paidAmount
+        },
+        new: {
+          status: newInvoice.status,
+          paidAmount: newInvoice.paidAmount
+        }
+      },
+      ipAddress,
+      hallId,
+      additionalInfo: `Updated invoice status from ${oldInvoice.status} to ${newInvoice.status}`
+    });
+  }
+
+  // Payment audit methods
+  static async logPaymentRecorded(recorderId, recorderEmail, recorderRole, payment, ipAddress, hallId) {
+    await this.logEvent({
+      userId: recorderId,
+      userEmail: recorderEmail,
+      userRole: recorderRole,
+      action: 'payment_recorded',
+      targetType: 'payment',
+      target: `Payment: ${payment.id}`,
+      changes: {
+        new: {
+          paymentId: payment.id,
+          invoiceId: payment.invoiceId,
+          invoiceNumber: payment.invoiceNumber,
+          amount: payment.amount,
+          paymentMethod: payment.paymentMethod
+        }
+      },
+      ipAddress,
+      hallId,
+      additionalInfo: `Recorded ${payment.paymentMethod} payment of $${payment.amount} for invoice ${payment.invoiceNumber}`
+    });
+  }
+
+  static async logPaymentUpdated(updaterId, updaterEmail, updaterRole, oldPayment, newPayment, ipAddress, hallId) {
+    await this.logEvent({
+      userId: updaterId,
+      userEmail: updaterEmail,
+      userRole: updaterRole,
+      action: 'payment_updated',
+      targetType: 'payment',
+      target: `Payment: ${newPayment.id || oldPayment.id}`,
+      changes: {
+        old: {
+          paymentMethod: oldPayment.paymentMethod,
+          reference: oldPayment.reference,
+          notes: oldPayment.notes
+        },
+        new: {
+          paymentMethod: newPayment.paymentMethod,
+          reference: newPayment.reference,
+          notes: newPayment.notes
+        }
+      },
+      ipAddress,
+      hallId,
+      additionalInfo: `Updated payment details for payment ${newPayment.id || oldPayment.id}`
+    });
+  }
+
+  static async logPaymentDeleted(deleterId, deleterEmail, deleterRole, payment, ipAddress, hallId) {
+    await this.logEvent({
+      userId: deleterId,
+      userEmail: deleterEmail,
+      userRole: deleterRole,
+      action: 'payment_deleted',
+      targetType: 'payment',
+      target: `Payment: ${payment.id}`,
+      changes: {
+        old: {
+          paymentId: payment.id,
+          invoiceId: payment.invoiceId,
+          invoiceNumber: payment.invoiceNumber,
+          amount: payment.amount,
+          paymentMethod: payment.paymentMethod
+        }
+      },
+      ipAddress,
+      hallId,
+      additionalInfo: `Deleted payment of $${payment.amount} for invoice ${payment.invoiceNumber}`
+    });
+  }
 }
 
 module.exports = AuditService;
