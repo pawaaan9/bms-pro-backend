@@ -116,6 +116,347 @@ const verifyToken = async (req, res, next) => {
   }
 };
 
+// POST /api/bookings/admin - Create a new booking (admin endpoint for hall owners)
+router.post('/admin', verifyToken, async (req, res) => {
+  try {
+    const ipAddress = req.ip || req.connection.remoteAddress || req.headers['x-forwarded-for'];
+    const userId = req.user.uid || req.user.user_id;
+    const {
+      customerName,
+      customerEmail,
+      customerPhone,
+      eventType,
+      selectedHall,
+      bookingDate,
+      startTime,
+      endTime,
+      additionalDescription,
+      estimatedPrice,
+      customerAvatar,
+      guestCount,
+      status = 'pending' // Admin can set initial status
+    } = req.body;
+
+    // Debug: Log the received date
+    console.log('Admin booking API - Date received:', {
+      originalDate: bookingDate,
+      dateType: typeof bookingDate,
+      dateValue: bookingDate,
+      parsedDate: new Date(bookingDate),
+      isoString: new Date(bookingDate).toISOString()
+    });
+
+    // Validate required fields
+    if (!customerName || !customerEmail || !customerPhone || !eventType || !selectedHall || !bookingDate || !startTime || !endTime) {
+      return res.status(400).json({
+        message: 'Missing required fields: customerName, customerEmail, customerPhone, eventType, selectedHall, bookingDate, startTime, endTime'
+      });
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(customerEmail)) {
+      return res.status(400).json({ message: 'Invalid email format' });
+    }
+
+    // Validate phone format (basic validation)
+    const phoneRegex = /^[\+]?[1-9][\d]{0,15}$/;
+    if (!phoneRegex.test(customerPhone.replace(/[\s\-\(\)]/g, ''))) {
+      return res.status(400).json({ message: 'Invalid phone number format' });
+    }
+
+    // Validate date format and ensure it's not in the past
+    const bookingDateObj = new Date(bookingDate);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    if (isNaN(bookingDateObj.getTime())) {
+      return res.status(400).json({ message: 'Invalid booking date format' });
+    }
+    
+    if (bookingDateObj < today) {
+      return res.status(400).json({ message: 'Booking date cannot be in the past' });
+    }
+
+    // Validate time format
+    const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/;
+    if (!timeRegex.test(startTime) || !timeRegex.test(endTime)) {
+      return res.status(400).json({ message: 'Invalid time format. Use HH:MM format' });
+    }
+
+    // Validate that end time is after start time
+    const startTimeObj = new Date(`2000-01-01T${startTime}:00`);
+    const endTimeObj = new Date(`2000-01-01T${endTime}:00`);
+    
+    if (endTimeObj <= startTimeObj) {
+      return res.status(400).json({ message: 'End time must be after start time' });
+    }
+
+    // Validate status
+    if (!['pending', 'confirmed', 'cancelled', 'completed'].includes(status)) {
+      return res.status(400).json({
+        message: 'Invalid status. Must be one of: pending, confirmed, cancelled, completed'
+      });
+    }
+
+    // Get user data to verify they are a hall_owner or sub_user
+    const userDoc = await admin.firestore().collection('users').doc(userId).get();
+    if (!userDoc.exists) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const userData = userDoc.data();
+    
+    // Determine the actual hall owner ID
+    let actualHallOwnerId = userId;
+    
+    if (userData.role === 'sub_user') {
+      // For sub_users, use their parent user ID as the hall owner ID
+      if (!userData.parentUserId) {
+        return res.status(403).json({ message: 'Access denied. Sub-user has no parent hall owner.' });
+      }
+      actualHallOwnerId = userData.parentUserId;
+    } else if (userData.role !== 'hall_owner') {
+      return res.status(403).json({ message: 'Access denied. Only hall owners and sub-users can create bookings.' });
+    }
+
+    // Verify selected hall exists and belongs to the hall owner
+    const hallDoc = await admin.firestore().collection('resources').doc(selectedHall).get();
+    if (!hallDoc.exists) {
+      return res.status(404).json({ message: 'Selected hall not found' });
+    }
+
+    const hallData = hallDoc.data();
+    if (hallData.hallOwnerId !== actualHallOwnerId) {
+      return res.status(400).json({ message: 'Selected hall does not belong to the specified hall owner' });
+    }
+
+    // Check for conflicting bookings
+    const conflictingBookings = await admin.firestore()
+      .collection('bookings')
+      .where('hallOwnerId', '==', actualHallOwnerId)
+      .where('selectedHall', '==', selectedHall)
+      .where('bookingDate', '==', bookingDate)
+      .where('status', 'in', ['pending', 'confirmed'])
+      .get();
+
+    // Check for time conflicts
+    for (const bookingDoc of conflictingBookings.docs) {
+      const booking = bookingDoc.data();
+      const existingStart = new Date(`2000-01-01T${booking.startTime}:00`);
+      const existingEnd = new Date(`2000-01-01T${booking.endTime}:00`);
+      
+      // Check if times overlap
+      if ((startTimeObj < existingEnd && endTimeObj > existingStart)) {
+        return res.status(409).json({
+          message: 'Time slot is already booked. Please choose a different time.',
+          conflictingBooking: {
+            startTime: booking.startTime,
+            endTime: booking.endTime,
+            customerName: booking.customerName
+          }
+        });
+      }
+    }
+
+    // Calculate booking price using the same logic as customer bookings
+    let calculatedPrice = 0;
+    let priceDetails = null;
+    
+    try {
+      // Get pricing for the selected hall
+      const pricingSnapshot = await admin.firestore()
+        .collection('pricing')
+        .where('hallOwnerId', '==', actualHallOwnerId)
+        .where('resourceId', '==', selectedHall)
+        .get();
+      
+      if (!pricingSnapshot.empty) {
+        const pricingData = pricingSnapshot.docs[0].data();
+        
+        // Calculate duration in hours - use the actual booking date to avoid timezone issues
+        const startTimeObj = new Date(`${bookingDate}T${startTime}:00`);
+        const endTimeObj = new Date(`${bookingDate}T${endTime}:00`);
+        const durationHours = (endTimeObj.getTime() - startTimeObj.getTime()) / (1000 * 60 * 60);
+        
+        // Debug: Log the time calculation
+        console.log('Admin booking - Time calculation:', {
+          bookingDate: bookingDate,
+          startTime: startTime,
+          endTime: endTime,
+          startTimeObj: startTimeObj.toISOString(),
+          endTimeObj: endTimeObj.toISOString(),
+          durationHours: durationHours
+        });
+        
+        // Check if it's weekend (Saturday = 6, Sunday = 0)
+        const bookingDateObj = new Date(bookingDate);
+        const isWeekend = bookingDateObj.getDay() === 0 || bookingDateObj.getDay() === 6;
+        
+        const rate = isWeekend ? pricingData.weekendRate : pricingData.weekdayRate;
+        
+        if (pricingData.rateType === 'hourly') {
+          calculatedPrice = rate * durationHours;
+        } else {
+          // For daily rates, assume minimum 4 hours for half day, 8+ hours for full day
+          calculatedPrice = durationHours >= 8 ? rate : rate * 0.5;
+        }
+        
+        priceDetails = {
+          rateType: pricingData.rateType,
+          weekdayRate: pricingData.weekdayRate,
+          weekendRate: pricingData.weekendRate,
+          appliedRate: rate,
+          durationHours: durationHours,
+          isWeekend: isWeekend,
+          calculationMethod: pricingData.rateType === 'hourly' ? 'hourly' : 'daily',
+          frontendEstimatedPrice: estimatedPrice || null
+        };
+        
+        console.log('Admin booking price calculation:', {
+          resourceId: selectedHall,
+          rateType: pricingData.rateType,
+          weekdayRate: pricingData.weekdayRate,
+          weekendRate: pricingData.weekendRate,
+          appliedRate: rate,
+          durationHours: durationHours,
+          isWeekend: isWeekend,
+          calculatedPrice: calculatedPrice,
+          adminEstimatedPrice: estimatedPrice
+        });
+      } else {
+        console.log('No pricing found for hall, using estimated price or default');
+        calculatedPrice = estimatedPrice || 0;
+      }
+    } catch (priceError) {
+      console.error('Error calculating price:', priceError);
+      // Use estimated price if calculation fails
+      calculatedPrice = estimatedPrice || 0;
+    }
+
+    // Create booking data
+    const bookingData = {
+      customerId: null, // Admin-created bookings don't have a customer Firebase UID
+      customerName: customerName.trim(),
+      customerEmail: customerEmail.trim().toLowerCase(),
+      customerPhone: customerPhone.trim(),
+      customerAvatar: customerAvatar || null,
+      eventType: eventType.trim(),
+      selectedHall: selectedHall,
+      hallName: hallData.name,
+      bookingDate: bookingDate,
+      startTime: startTime,
+      endTime: endTime,
+      additionalDescription: additionalDescription ? additionalDescription.trim() : '',
+      guestCount: guestCount ? parseInt(guestCount) : null,
+      hallOwnerId: actualHallOwnerId,
+      status: status,
+      calculatedPrice: calculatedPrice,
+      priceDetails: priceDetails,
+      bookingSource: 'admin_panel', // Track that this was created by admin
+      createdBy: userId, // Track which admin created this booking
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    };
+
+    // Debug: Log the final booking data
+    console.log('Admin booking - Final booking data:', {
+      bookingDate: bookingData.bookingDate,
+      startTime: bookingData.startTime,
+      endTime: bookingData.endTime,
+      customerName: bookingData.customerName,
+      eventType: bookingData.eventType
+    });
+
+    // Save to Firestore
+    const docRef = await admin.firestore().collection('bookings').add(bookingData);
+
+    console.log('Admin booking created successfully:', {
+      bookingId: docRef.id,
+      customerName: customerName,
+      customerEmail: customerEmail,
+      hallOwnerId: actualHallOwnerId,
+      selectedHall: selectedHall,
+      bookingDate: bookingDate,
+      createdBy: userId
+    });
+
+    // Log booking creation
+    const AuditService = require('../services/auditService');
+    await AuditService.logBookingCreated(
+      userId,
+      req.user.email,
+      userData.role,
+      {
+        id: docRef.id,
+        customerName: customerName,
+        eventDate: bookingDate,
+        status: status,
+        totalAmount: calculatedPrice || estimatedPrice || 0
+      },
+      ipAddress,
+      actualHallOwnerId
+    );
+
+    // Get the created booking with ID
+    const createdBooking = {
+      id: docRef.id,
+      ...bookingData,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+
+    // Send email notification to customer for admin-created bookings (same as regular bookings)
+    if (customerEmail) {
+      try {
+        console.log('Sending booking confirmation email for admin-created booking:', {
+          customerEmail: customerEmail,
+          customerName: customerName,
+          bookingId: docRef.id,
+          eventType: eventType,
+          bookingDate: bookingDate,
+          status: status
+        });
+
+        // Send the same type of email as regular bookings
+        const notificationData = {
+          type: 'booking_confirmation',
+          title: `Booking ${status.charAt(0).toUpperCase() + status.slice(1)} - ${eventType}`,
+          message: `Hello ${customerName},\n\nYour booking has been ${status}.\n\nEvent: ${eventType}\nDate: ${bookingDate}\nTime: ${startTime} - ${endTime}\nHall: ${hallData.name}${calculatedPrice ? `\nTotal Cost: $${calculatedPrice.toFixed(2)}` : ''}${additionalDescription ? `\n\nNotes: ${additionalDescription}` : ''}\n\nThank you for choosing our venue!`,
+          data: {
+            bookingId: docRef.id,
+            customerName: customerName,
+            eventType: eventType,
+            hallName: hallData.name,
+            bookingDate: bookingDate,
+            startTime: startTime,
+            endTime: endTime,
+            status: status,
+            calculatedPrice: calculatedPrice,
+            createdBy: 'admin',
+            additionalDescription: additionalDescription || ''
+          }
+        };
+
+        await emailService.sendNotificationEmail(notificationData, customerEmail);
+        console.log('Booking confirmation email sent successfully to:', customerEmail);
+      } catch (emailError) {
+        console.error('Failed to send booking confirmation email:', emailError);
+        // Don't fail the booking creation if email fails
+      }
+    }
+
+    res.status(201).json({
+      message: 'Admin booking created successfully',
+      booking: createdBooking
+    });
+
+  } catch (error) {
+    console.error('Error creating admin booking:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
 // POST /api/bookings - Create a new booking (public endpoint for customers)
 router.post('/', async (req, res) => {
   try {
