@@ -11,7 +11,11 @@ const router = express.Router();
 async function generateQuotationPDF(quotationData) {
   return new Promise((resolve, reject) => {
     try {
-      const doc = new PDFDocument({ margin: 50 });
+      const doc = new PDFDocument({ 
+        margin: 40,
+        size: 'A4',
+        layout: 'portrait'
+      });
       const buffers = [];
       
       doc.on('data', buffers.push.bind(buffers));
@@ -20,49 +24,179 @@ async function generateQuotationPDF(quotationData) {
         resolve(pdfData);
       });
 
-      // Header
-      doc.fontSize(20).text('Cranbourne Public Hall', 50, 50);
-      doc.fontSize(16).text('Quotation', 50, 80);
+      // Define colors
+      const primaryColor = '#2563eb'; // Blue
+      const secondaryColor = '#64748b'; // Gray
+      const accentColor = '#059669'; // Green
+      const lightGray = '#f1f5f9';
+      const darkGray = '#334155';
+
+      // Header with gradient-like effect
+      doc.rect(0, 0, 595, 120)
+         .fill(primaryColor);
       
-      // Quotation details
-      doc.fontSize(12);
-      doc.text(`Quotation ID: ${quotationData.id}`, 50, 120);
-      doc.text(`Date: ${new Date(quotationData.createdAt).toLocaleDateString()}`, 50, 140);
-      doc.text(`Valid Until: ${new Date(quotationData.validUntil).toLocaleDateString()}`, 50, 160);
+      // Company logo area (placeholder)
+      doc.rect(40, 20, 60, 60)
+         .fill('#ffffff')
+         .stroke(primaryColor, 2);
       
-      // Customer details
-      doc.text('Customer Details:', 50, 200);
-      doc.text(`Name: ${quotationData.customerName}`, 70, 220);
-      doc.text(`Email: ${quotationData.customerEmail}`, 70, 240);
-      doc.text(`Phone: ${quotationData.customerPhone}`, 70, 260);
+      doc.fillColor('#ffffff')
+         .fontSize(24)
+         .font('Helvetica-Bold')
+         .text('Cranbourne', 120, 30)
+         .fontSize(18)
+         .text('Public Hall', 120, 55);
       
-      // Event details
-      doc.text('Event Details:', 50, 300);
-      doc.text(`Event Type: ${quotationData.eventType}`, 70, 320);
-      doc.text(`Resource: ${quotationData.resource}`, 70, 340);
-      doc.text(`Event Date: ${new Date(quotationData.eventDate).toLocaleDateString()}`, 70, 360);
-      doc.text(`Start Time: ${quotationData.startTime}`, 70, 380);
-      doc.text(`End Time: ${quotationData.endTime}`, 70, 400);
-      doc.text(`Guest Count: ${quotationData.guestCount || 'N/A'}`, 70, 420);
+      // Quotation title
+      doc.fillColor('#ffffff')
+         .fontSize(28)
+         .font('Helvetica-Bold')
+         .text('QUOTATION', 50, 45, { width: 495, align: 'right' });
+
+      // Quotation details box
+      doc.rect(40, 140, 515, 80)
+         .fill(lightGray)
+         .stroke(secondaryColor, 1);
       
-      // Service details
-      doc.text('Service Details:', 50, 460);
-      doc.text(`Resource: ${quotationData.resource}`, 70, 480);
-      doc.text(`Event Type: ${quotationData.eventType}`, 70, 500);
-      doc.text(`Duration: ${quotationData.startTime} - ${quotationData.endTime}`, 70, 520);
-      if (quotationData.guestCount) {
-        doc.text(`Guest Count: ${quotationData.guestCount}`, 70, 540);
+      doc.fillColor(darkGray)
+         .fontSize(12)
+         .font('Helvetica-Bold')
+         .text('QUOTATION DETAILS', 50, 150);
+      
+      doc.fillColor(secondaryColor)
+         .fontSize(10)
+         .font('Helvetica')
+         .text(`Quotation ID: ${quotationData.id}`, 50, 170)
+         .text(`Date: ${quotationData.createdAt ? new Date(quotationData.createdAt).toLocaleDateString('en-AU') : new Date().toLocaleDateString('en-AU')}`, 50, 185)
+         .text(`Valid Until: ${quotationData.validUntil ? new Date(quotationData.validUntil).toLocaleDateString('en-AU') : 'N/A'}`, 50, 200);
+
+      // Customer details section
+      doc.fillColor(primaryColor)
+         .fontSize(14)
+         .font('Helvetica-Bold')
+         .text('CUSTOMER INFORMATION', 50, 250);
+      
+      doc.rect(50, 260, 240, 100)
+         .fill('#ffffff')
+         .stroke(secondaryColor, 1);
+      
+      doc.fillColor(darkGray)
+         .fontSize(11)
+         .font('Helvetica-Bold')
+         .text(quotationData.customerName, 60, 275);
+      
+      doc.fillColor(secondaryColor)
+         .fontSize(10)
+         .font('Helvetica')
+         .text(quotationData.customerEmail, 60, 295)
+         .text(quotationData.customerPhone, 60, 310)
+         .text('Customer', 60, 340, { width: 220, align: 'center' });
+
+      // Event details section
+      doc.fillColor(primaryColor)
+         .fontSize(14)
+         .font('Helvetica-Bold')
+         .text('EVENT INFORMATION', 310, 250);
+      
+      doc.rect(310, 260, 245, 100)
+         .fill('#ffffff')
+         .stroke(secondaryColor, 1);
+      
+      doc.fillColor(darkGray)
+         .fontSize(11)
+         .font('Helvetica-Bold')
+         .text(quotationData.eventType, 320, 275);
+      
+      doc.fillColor(secondaryColor)
+         .fontSize(10)
+         .font('Helvetica')
+         .text(quotationData.resource, 320, 295)
+         .text(quotationData.eventDate ? new Date(quotationData.eventDate).toLocaleDateString('en-AU') : 'N/A', 320, 310)
+         .text(`${quotationData.startTime || 'N/A'} - ${quotationData.endTime || 'N/A'}`, 320, 325)
+         .text(`Guests: ${quotationData.guestCount || 'N/A'}`, 320, 340);
+
+      // Service details table
+      doc.fillColor(primaryColor)
+         .fontSize(14)
+         .font('Helvetica-Bold')
+         .text('SERVICE DETAILS', 50, 380);
+      
+      // Table header
+      doc.rect(50, 390, 505, 25)
+         .fill(primaryColor);
+      
+      doc.fillColor('#ffffff')
+         .fontSize(11)
+         .font('Helvetica-Bold')
+         .text('Description', 60, 398)
+         .text('Details', 200, 398)
+         .text('Amount', 450, 398, { width: 95, align: 'right' });
+
+      // Table row
+      doc.rect(50, 415, 505, 30)
+         .fill('#ffffff')
+         .stroke(secondaryColor, 1);
+      
+      doc.fillColor(darkGray)
+         .fontSize(10)
+         .font('Helvetica')
+         .text('Venue Rental', 60, 425)
+         .text(`${quotationData.resource} - ${quotationData.eventType}`, 200, 425, { width: 240 })
+         .text(`$${quotationData.totalAmount.toFixed(2)}`, 450, 425, { width: 95, align: 'right' });
+
+      // Total section
+      doc.rect(350, 460, 205, 40)
+         .fill(accentColor);
+      
+      doc.fillColor('#ffffff')
+         .fontSize(16)
+         .font('Helvetica-Bold')
+         .text('TOTAL AMOUNT', 360, 470)
+         .fontSize(20)
+         .text(`$${quotationData.totalAmount.toFixed(2)} AUD`, 360, 485, { width: 185, align: 'right' });
+
+      // Notes section
+      if (quotationData.notes) {
+        doc.fillColor(primaryColor)
+           .fontSize(14)
+           .font('Helvetica-Bold')
+           .text('ADDITIONAL NOTES', 50, 520);
+        
+        doc.rect(50, 530, 505, 60)
+           .fill('#ffffff')
+           .stroke(secondaryColor, 1);
+        
+        doc.fillColor(secondaryColor)
+           .fontSize(10)
+           .font('Helvetica')
+           .text(quotationData.notes, 60, 540, { width: 485 });
       }
-      
-      // Total
-      doc.fontSize(14).text(`Total Amount: $${quotationData.totalAmount.toFixed(2)} AUD`, 50, 580);
-      
+
       // Terms and conditions
-      doc.fontSize(10).text('Terms and Conditions:', 50, 620);
-      doc.text('• This quotation is valid until the date specified above.', 70, 640);
-      doc.text('• Payment terms: 50% deposit required to confirm booking.', 70, 655);
-      doc.text('• Cancellation policy applies as per venue terms.', 70, 670);
-      doc.text('• Prices are subject to change without notice.', 70, 685);
+      doc.fillColor(primaryColor)
+         .fontSize(14)
+         .font('Helvetica-Bold')
+         .text('TERMS & CONDITIONS', 50, 610);
+      
+      doc.fillColor(secondaryColor)
+         .fontSize(9)
+         .font('Helvetica')
+         .text('• This quotation is valid until the date specified above.', 50, 630)
+         .text('• Payment terms: 50% deposit required to confirm booking.', 50, 645)
+         .text('• Cancellation policy applies as per venue terms.', 50, 660)
+         .text('• Prices are subject to change without notice.', 50, 675)
+         .text('• All bookings are subject to venue availability and approval.', 50, 690);
+
+      // Footer
+      doc.rect(0, 750, 595, 50)
+         .fill(lightGray);
+      
+      doc.fillColor(secondaryColor)
+         .fontSize(8)
+         .font('Helvetica')
+         .text('Cranbourne Public Hall • Professional Event Management', 50, 760, { width: 495, align: 'center' })
+         .text('Contact: info@cranbournehall.com.au • Phone: (03) 1234 5678', 50, 775, { width: 495, align: 'center' })
+         .text('Generated on ' + new Date().toLocaleDateString('en-AU'), 50, 790, { width: 495, align: 'center' });
       
       doc.end();
     } catch (error) {
@@ -408,11 +542,10 @@ router.put('/:id/status', verifyToken, async (req, res) => {
       }
     }
 
-    // If status is 'Declined', send decline notification email
-    if (status === 'Declined') {
-      try {
-        const EmailService = require('../services/emailService');
-        await EmailService.sendQuotationDeclineEmail({
+      // If status is 'Declined', send decline notification email
+      if (status === 'Declined') {
+        try {
+          await emailService.sendQuotationDeclineEmail({
           customerName: quotationData.customerName,
           customerEmail: quotationData.customerEmail,
           eventType: quotationData.eventType,
@@ -475,8 +608,12 @@ router.put('/:id/status', verifyToken, async (req, res) => {
 
         // Send booking confirmation email
         try {
-          const EmailService = require('../services/emailService');
-          await EmailService.sendBookingConfirmationEmail({
+          console.log('🔄 Starting booking confirmation email process...');
+          console.log('📧 Email service available:', !!emailService);
+          console.log('📧 Email service method available:', typeof emailService.sendBookingConfirmationEmail);
+          console.log('📧 Attempting to send booking confirmation email to:', quotationData.customerEmail);
+          
+          const emailResult = await emailService.sendBookingConfirmationEmail({
             customerName: quotationData.customerName,
             customerEmail: quotationData.customerEmail,
             eventType: quotationData.eventType,
@@ -491,12 +628,18 @@ router.put('/:id/status', verifyToken, async (req, res) => {
             notes: quotationData.notes
           });
           
-          console.log('Booking confirmation email sent successfully:', {
+          console.log('✅ Booking confirmation email sent successfully:', {
+            customerEmail: quotationData.customerEmail,
+            bookingId: bookingDocRef.id,
+            messageId: emailResult.messageId
+          });
+        } catch (emailError) {
+          console.error('❌ Failed to send booking confirmation email:', {
+            error: emailError.message,
+            stack: emailError.stack,
             customerEmail: quotationData.customerEmail,
             bookingId: bookingDocRef.id
           });
-        } catch (emailError) {
-          console.error('Failed to send booking confirmation email:', emailError);
           // Don't fail the booking creation if email fails
         }
 

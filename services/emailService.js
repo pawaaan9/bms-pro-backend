@@ -2,6 +2,8 @@ const nodemailer = require('nodemailer');
 
 class EmailService {
   constructor() {
+    console.log('📧 EmailService: Initializing email service...');
+    
     // Configure nodemailer with Gmail SMTP
     this.transporter = nodemailer.createTransport({
       service: 'gmail',
@@ -11,16 +13,18 @@ class EmailService {
       }
     });
 
+    console.log('📧 EmailService: Transporter created, verifying connection...');
     // Verify transporter configuration
     this.verifyConnection();
   }
 
   async verifyConnection() {
     try {
+      console.log('📧 EmailService: Verifying connection...');
       await this.transporter.verify();
-      console.log('✅ Email service connected successfully');
+      console.log('✅ EmailService: Email service connected successfully');
     } catch (error) {
-      console.error('❌ Email service connection failed:', error);
+      console.error('❌ EmailService: Email service connection failed:', error);
     }
   }
 
@@ -428,6 +432,9 @@ class EmailService {
 
   async sendBookingConfirmationEmail(bookingData) {
     try {
+      console.log('📧 EmailService: Starting booking confirmation email...');
+      console.log('📧 EmailService: Booking data:', JSON.stringify(bookingData, null, 2));
+      
       const { 
         customerName, 
         customerEmail, 
@@ -442,6 +449,8 @@ class EmailService {
         quotationId, 
         notes 
       } = bookingData;
+
+      console.log('📧 EmailService: Sending to:', customerEmail);
 
       const mailOptions = {
         from: 'pawankanchana34741@gmail.com',
@@ -462,11 +471,16 @@ class EmailService {
         })
       };
 
+      console.log('📧 EmailService: Mail options prepared, sending...');
       const result = await this.transporter.sendMail(mailOptions);
-      console.log('✅ Booking confirmation email sent successfully:', result.messageId);
+      console.log('✅ EmailService: Booking confirmation email sent successfully:', result.messageId);
       return result;
     } catch (error) {
-      console.error('❌ Failed to send booking confirmation email:', error);
+      console.error('❌ EmailService: Failed to send booking confirmation email:', {
+        error: error.message,
+        stack: error.stack,
+        bookingData: bookingData
+      });
       throw error;
     }
   }
