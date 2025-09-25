@@ -63,6 +63,10 @@ app.use('/api/invoices', invoicesRoutes);
 const paymentsRoutes = require('./routes/payments');
 app.use('/api/payments', paymentsRoutes);
 
+// Quotations routes
+const quotationsRoutes = require('./routes/quotations');
+app.use('/api/quotations', quotationsRoutes);
+
 // Login endpoint (returns JWT token)
 app.post('/api/login', async (req, res) => {
   const { email, password } = req.body;

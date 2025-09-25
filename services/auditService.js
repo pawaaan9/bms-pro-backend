@@ -286,6 +286,101 @@ class AuditService {
   }
 
   /**
+   * Log quotation events
+   */
+  static async logQuotationCreated(creatorId, creatorEmail, creatorRole, quotation, ipAddress, hallId) {
+    await this.logEvent({
+      userId: creatorId,
+      userEmail: creatorEmail,
+      userRole: creatorRole,
+      action: 'quotation_created',
+      targetType: 'quotation',
+      target: `Quotation ID: ${quotation.quotationId}`,
+      changes: {
+        new: {
+          customerName: quotation.customerName,
+          eventType: quotation.eventType,
+          totalAmount: quotation.totalAmount,
+          status: 'Draft'
+        }
+      },
+      ipAddress,
+      hallId,
+      additionalInfo: `Created quotation for ${quotation.customerName}`
+    });
+  }
+
+  static async logQuotationUpdated(updaterId, updaterEmail, updaterRole, oldQuotation, newQuotation, ipAddress, hallId) {
+    const changes = {};
+    
+    const fieldsToCompare = ['status', 'customerName', 'eventType', 'totalAmount', 'notes'];
+    
+    fieldsToCompare.forEach(field => {
+      if (JSON.stringify(oldQuotation[field]) !== JSON.stringify(newQuotation[field])) {
+        changes[field] = {
+          old: oldQuotation[field],
+          new: newQuotation[field]
+        };
+      }
+    });
+
+    if (Object.keys(changes).length > 0) {
+      await this.logEvent({
+        userId: updaterId,
+        userEmail: updaterEmail,
+        userRole: updaterRole,
+        action: 'quotation_updated',
+        targetType: 'quotation',
+        target: `Quotation ID: ${newQuotation.id}`,
+        changes,
+        ipAddress,
+        hallId,
+        additionalInfo: `Updated quotation for ${newQuotation.customerName}`
+      });
+    }
+  }
+
+  static async logQuotationStatusChanged(updaterId, updaterEmail, updaterRole, quotation, oldStatus, newStatus, ipAddress, hallId) {
+    await this.logEvent({
+      userId: updaterId,
+      userEmail: updaterEmail,
+      userRole: updaterRole,
+      action: 'quotation_status_changed',
+      targetType: 'quotation',
+      target: `Quotation ID: ${quotation.id}`,
+      changes: {
+        old: { status: oldStatus },
+        new: { status: newStatus }
+      },
+      ipAddress,
+      hallId,
+      additionalInfo: `Changed quotation status from ${oldStatus} to ${newStatus} for ${quotation.customerName}`
+    });
+  }
+
+  static async logQuotationDeleted(deleterId, deleterEmail, deleterRole, quotation, ipAddress, hallId) {
+    await this.logEvent({
+      userId: deleterId,
+      userEmail: deleterEmail,
+      userRole: deleterRole,
+      action: 'quotation_deleted',
+      targetType: 'quotation',
+      target: `Quotation ID: ${quotation.id}`,
+      changes: {
+        old: {
+          customerName: quotation.customerName,
+          eventType: quotation.eventType,
+          totalAmount: quotation.totalAmount,
+          status: quotation.status
+        }
+      },
+      ipAddress,
+      hallId,
+      additionalInfo: `Deleted quotation for ${quotation.customerName}`
+    });
+  }
+
+  /**
    * Log hall/settings events
    */
   static async logHallSettingsUpdated(updaterId, updaterEmail, updaterRole, oldSettings, newSettings, ipAddress, hallId) {
