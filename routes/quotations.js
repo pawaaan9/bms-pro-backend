@@ -608,11 +608,7 @@ router.put('/:id/status', verifyToken, async (req, res) => {
 
         // Send booking confirmation email
         try {
-          console.log('🔄 Starting booking confirmation email process...');
-          console.log('📧 Email service available:', !!emailService);
-          console.log('📧 Email service method available:', typeof emailService.sendBookingConfirmationEmail);
-          console.log('📧 Attempting to send booking confirmation email to:', quotationData.customerEmail);
-          
+          console.log('Sending booking confirmation email to:', quotationData.customerEmail);
           const emailResult = await emailService.sendBookingConfirmationEmail({
             customerName: quotationData.customerName,
             customerEmail: quotationData.customerEmail,
@@ -628,18 +624,9 @@ router.put('/:id/status', verifyToken, async (req, res) => {
             notes: quotationData.notes
           });
           
-          console.log('✅ Booking confirmation email sent successfully:', {
-            customerEmail: quotationData.customerEmail,
-            bookingId: bookingDocRef.id,
-            messageId: emailResult.messageId
-          });
+          console.log('✅ Booking confirmation email sent successfully to:', quotationData.customerEmail);
         } catch (emailError) {
-          console.error('❌ Failed to send booking confirmation email:', {
-            error: emailError.message,
-            stack: emailError.stack,
-            customerEmail: quotationData.customerEmail,
-            bookingId: bookingDocRef.id
-          });
+          console.error('❌ Failed to send booking confirmation email:', emailError.message);
           // Don't fail the booking creation if email fails
         }
 
