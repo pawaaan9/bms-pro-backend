@@ -791,6 +791,143 @@ class EmailService {
     `;
   }
 
+  async sendInvoiceEmail(invoiceData, pdfBuffer) {
+    try {
+      const subject = `Invoice ${invoiceData.invoiceNumber} - ${invoiceData.invoiceType}`;
+      const message = `Dear ${invoiceData.customer.name},\n\nPlease find attached your invoice for ${invoiceData.invoiceType} payment.\n\nInvoice Details:\n- Invoice Number: ${invoiceData.invoiceNumber}\n- Issue Date: ${new Date(invoiceData.issueDate).toLocaleDateString()}\n- Due Date: ${new Date(invoiceData.dueDate).toLocaleDateString()}\n- Total Amount: $${invoiceData.total.toFixed(2)} AUD\n- Status: ${invoiceData.status}\n\nPayment is due within 30 days of the invoice date. Please refer to the attached PDF for payment details and bank information.\n\nThank you for your business!`;
+
+      const mailOptions = {
+        from: 'pawankanchana34741@gmail.com',
+        to: invoiceData.customer.email,
+        subject: subject,
+        html: this.generateInvoiceHTMLTemplate(invoiceData),
+        text: message,
+        attachments: [
+          {
+            filename: `invoice-${invoiceData.invoiceNumber}.pdf`,
+            content: pdfBuffer,
+            contentType: 'application/pdf'
+          }
+        ]
+      };
+
+      const result = await this.transporter.sendMail(mailOptions);
+      console.log('✅ Invoice email sent successfully:', result.messageId);
+      return result;
+    } catch (error) {
+      console.error('❌ Failed to send invoice email:', error);
+      throw error;
+    }
+  }
+
+  generateInvoiceHTMLTemplate(invoiceData) {
+    const logoUrl = 'https://via.placeholder.com/200x80/4F46E5/FFFFFF?text=Cranbourne+Hall';
+    
+    return `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Cranbourne Public Hall - Invoice ${invoiceData.invoiceNumber}</title>
+      </head>
+      <body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f1f5f9;">
+        <div style="max-width: 600px; margin: 0 auto; background-color: white; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+          <!-- Header -->
+          <div style="background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%); padding: 40px 20px; text-align: center;">
+            <img src="${logoUrl}" alt="Cranbourne Public Hall" style="max-width: 200px; height: auto;">
+            <h1 style="color: white; margin: 20px 0 0 0; font-size: 24px; font-weight: 600;">Cranbourne Public Hall</h1>
+          </div>
+          
+          <!-- Content -->
+          <div style="padding: 40px 30px;">
+            <h2 style="color: #1e293b; margin: 0 0 20px 0; font-size: 28px; font-weight: 700;">Invoice ${invoiceData.invoiceNumber}</h2>
+            
+            <div style="color: #475569; line-height: 1.6; font-size: 16px; margin-bottom: 20px;">
+              Dear ${invoiceData.customer.name},
+            </div>
+            
+            <div style="color: #475569; line-height: 1.6; font-size: 16px; margin-bottom: 20px;">
+              Please find attached your invoice for <strong>${invoiceData.invoiceType}</strong> payment.
+            </div>
+            
+            <div style="background-color: #f8fafc; padding: 20px; border-radius: 8px; margin: 20px 0;">
+              <h3 style="color: #1e293b; margin: 0 0 15px 0;">Invoice Details</h3>
+              <table style="width: 100%; border-collapse: collapse;">
+                <tr>
+                  <td style="padding: 8px 0; color: #64748b; font-weight: bold;">Invoice Number:</td>
+                  <td style="padding: 8px 0; color: #1e293b;">${invoiceData.invoiceNumber}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; color: #64748b; font-weight: bold;">Issue Date:</td>
+                  <td style="padding: 8px 0; color: #1e293b;">${new Date(invoiceData.issueDate).toLocaleDateString()}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; color: #64748b; font-weight: bold;">Due Date:</td>
+                  <td style="padding: 8px 0; color: #1e293b;">${new Date(invoiceData.dueDate).toLocaleDateString()}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; color: #64748b; font-weight: bold;">Invoice Type:</td>
+                  <td style="padding: 8px 0; color: #1e293b;">${invoiceData.invoiceType}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; color: #64748b; font-weight: bold;">Subtotal:</td>
+                  <td style="padding: 8px 0; color: #1e293b;">$${invoiceData.subtotal.toFixed(2)}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; color: #64748b; font-weight: bold;">GST (10%):</td>
+                  <td style="padding: 8px 0; color: #1e293b;">$${invoiceData.gst.toFixed(2)}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; color: #64748b; font-weight: bold;">Total Amount:</td>
+                  <td style="padding: 8px 0; color: #059669; font-weight: bold; font-size: 18px;">$${invoiceData.total.toFixed(2)} AUD</td>
+                </tr>
+              </table>
+            </div>
+            
+            <div style="background-color: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: 20px; margin: 20px 0;">
+              <h3 style="color: #92400e; margin: 0 0 15px 0;">Payment Information</h3>
+              <div style="color: #92400e; font-size: 14px; line-height: 1.6;">
+                <p style="margin: 0 0 10px 0;"><strong>Payment Method:</strong> Bank Transfer</p>
+                <p style="margin: 0 0 10px 0;"><strong>Account Name:</strong> Cranbourne Public Hall</p>
+                <p style="margin: 0 0 10px 0;"><strong>BSB:</strong> 123-456</p>
+                <p style="margin: 0;"><strong>Account Number:</strong> 12345678</p>
+              </div>
+            </div>
+            
+            <div style="text-align: center; margin: 30px 0;">
+              <p style="color: #64748b; margin-bottom: 20px;">Payment is due within 30 days of the invoice date.</p>
+              <a href="mailto:pawankanchana34741@gmail.com" 
+                 style="background-color: #4f46e5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">
+                Contact Us
+              </a>
+            </div>
+            
+            <div style="border-top: 1px solid #e2e8f0; margin-top: 40px; padding-top: 30px; text-align: center;">
+              <p style="color: #64748b; font-size: 14px; margin: 0 0 10px 0;">
+                Thank you for your business!
+              </p>
+              <p style="color: #64748b; font-size: 14px; margin: 0;">
+                If you have any questions about this invoice, please don't hesitate to contact us.
+              </p>
+            </div>
+          </div>
+          
+          <!-- Footer -->
+          <div style="background-color: #f8fafc; padding: 30px; text-align: center; border-top: 1px solid #e2e8f0;">
+            <p style="color: #64748b; font-size: 12px; margin: 0 0 10px 0;">
+              Cranbourne Public Hall Management System
+            </p>
+            <p style="color: #64748b; font-size: 12px; margin: 0;">
+              Invoice generated on ${new Date().toLocaleDateString('en-AU')}
+            </p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+  }
+
   async sendTestEmail(toEmail) {
     try {
       const testNotification = {
