@@ -667,11 +667,11 @@ router.post('/', async (req, res) => {
       updatedAt: new Date()
     };
 
-    // Create notification and send email for the customer if they have a customerId (from Cranbourne website)
-    if (customerId && customerEmail) {
+    // Send email notification for ALL bookings (regardless of customerId)
+    if (customerEmail) {
       try {
-        console.log('Creating notification for booking:', {
-          customerId,
+        console.log('Sending email notification for booking:', {
+          customerId: customerId || 'anonymous',
           customerEmail,
           bookingId: docRef.id,
           eventType,
@@ -695,15 +695,51 @@ router.post('/', async (req, res) => {
           }
         };
 
-        const notificationId = await createNotificationAndSendEmail(customerId, customerEmail, notificationData);
-        console.log('Notification and email sent for customer booking submission:', {
-          customerId,
-          notificationId,
-          bookingId: docRef.id
+        // Send email notification directly using emailService
+        await emailService.sendNotificationEmail(notificationData, customerEmail);
+        console.log('✅ Email notification sent successfully for booking:', {
+          customerEmail,
+          bookingId: docRef.id,
+          eventType,
+          bookingDate
         });
-      } catch (notificationError) {
-        console.error('Error creating booking submission notification:', notificationError);
-        // Don't fail the booking creation if notification creation fails
+
+        // Also create notification in database if customerId exists (for authenticated users)
+        if (customerId) {
+          try {
+            const notificationId = await createNotificationAndSendEmail(customerId, customerEmail, notificationData);
+            console.log('Database notification created for authenticated user:', {
+              customerId,
+              notificationId,
+              bookingId: docRef.id
+            });
+          } catch (notificationError) {
+            console.error('Failed to create database notification (but email was sent):', notificationError);
+          }
+        }
+      } catch (emailError) {
+        console.error('❌ Failed to send email notification for booking:', emailError);
+        
+        // Try to send a simple fallback email
+        try {
+          console.log('Attempting to send fallback email notification...');
+          const fallbackEmailData = {
+            to: customerEmail,
+            subject: `Booking Request Submitted - ${eventType}`,
+            body: `Dear ${customerName},\n\nYour booking request for ${eventType} on ${bookingDate} has been submitted successfully.\n\nBooking Details:\n- Event: ${eventType}\n- Date: ${bookingDate}\n- Time: ${startTime} - ${endTime}\n- Resource: ${hallData.name}\n- Booking ID: ${docRef.id}\n\nWe'll get back to you soon with confirmation.\n\nThank you for choosing Cranbourne Public Hall!`,
+            recipientName: customerName,
+            bookingId: docRef.id,
+            templateName: 'booking_submitted_fallback',
+            isCustom: true
+          };
+          
+          await emailService.sendCustomizedEmail(fallbackEmailData);
+          console.log('✅ Fallback email notification sent successfully');
+        } catch (fallbackError) {
+          console.error('❌ Fallback email also failed:', fallbackError);
+        }
+        
+        // Don't fail the booking creation if email fails
       }
     }
 
@@ -762,14 +798,22 @@ router.get('/hall-owner/:hallOwnerId', verifyToken, async (req, res) => {
       return res.status(403).json({ message: 'Access denied. Only hall owners and sub-users can view bookings.' });
     }
 
-    // Get all bookings for this hall owner
-    console.log('Fetching bookings for hallOwnerId:', actualHallOwnerId);
-    const bookingsSnapshot = await admin.firestore()
+    // Get bookings for this hall owner with optional status filter
+    const { status } = req.query;
+    console.log('Fetching bookings for hallOwnerId:', actualHallOwnerId, 'with status filter:', status);
+    
+    let query = admin.firestore()
       .collection('bookings')
-      .where('hallOwnerId', '==', actualHallOwnerId)
-      .get();
+      .where('hallOwnerId', '==', actualHallOwnerId);
+    
+    // Add status filter if provided
+    if (status) {
+      query = query.where('status', '==', status.toLowerCase());
+    }
+    
+    const bookingsSnapshot = await query.get();
 
-    console.log('Found', bookingsSnapshot.docs.length, 'bookings');
+    console.log(`Found ${bookingsSnapshot.docs.length} bookings${status ? ` with status '${status}'` : ''}`);
 
     const bookings = bookingsSnapshot.docs.map(doc => {
       const data = doc.data();

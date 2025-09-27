@@ -30,6 +30,10 @@ class EmailService {
 
   async sendNotificationEmail(notificationData, userEmail) {
     try {
+      console.log('📧 EmailService: Preparing to send notification email...');
+      console.log('📧 EmailService: Recipient:', userEmail);
+      console.log('📧 EmailService: Notification type:', notificationData.type);
+      
       const { type, title, message, data } = notificationData;
       
       // Generate email content based on notification type
@@ -43,11 +47,12 @@ class EmailService {
         text: emailContent.text
       };
 
+      console.log('📧 EmailService: Sending email with subject:', emailContent.subject);
       const result = await this.transporter.sendMail(mailOptions);
-      console.log('✅ Email sent successfully:', result.messageId);
+      console.log('✅ EmailService: Email sent successfully:', result.messageId);
       return result;
     } catch (error) {
-      console.error('❌ Failed to send email:', error);
+      console.error('❌ EmailService: Failed to send email:', error);
       throw error;
     }
   }
@@ -209,6 +214,10 @@ class EmailService {
 
   async sendCustomizedEmail(emailData) {
     try {
+      console.log('📧 EmailService: Preparing to send customized email...');
+      console.log('📧 EmailService: Recipient:', emailData.to);
+      console.log('📧 EmailService: Subject:', emailData.subject);
+      
       const { to, subject, body, recipientName, bookingId, templateName, isCustom } = emailData;
       
       // Generate email content with enhanced template
@@ -229,11 +238,12 @@ class EmailService {
         text: emailContent.text
       };
 
+      console.log('📧 EmailService: Sending customized email...');
       const result = await this.transporter.sendMail(mailOptions);
-      console.log('✅ Customized email sent successfully:', result.messageId);
+      console.log('✅ EmailService: Customized email sent successfully:', result.messageId);
       return result;
     } catch (error) {
-      console.error('❌ Failed to send customized email:', error);
+      console.error('❌ EmailService: Failed to send customized email:', error);
       throw error;
     }
   }
