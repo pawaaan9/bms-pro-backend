@@ -1,8 +1,48 @@
 const express = require('express');
 const admin = require('../firebaseAdmin');
 const { verifyToken } = require('../middleware/authMiddleware');
+const multer = require('multer');
 
 const router = express.Router();
+
+// Initialize Firebase Storage
+let bucket;
+try {
+  bucket = admin.storage().bucket('bms-pro-e3125.firebasestorage.app');
+  console.log('Firebase Storage bucket initialized:', bucket.name);
+} catch (error) {
+  console.error('Error initializing Firebase Storage bucket:', error);
+  bucket = null;
+}
+
+// Configure multer for file uploads
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    // Accept only image files
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only image files are allowed'), false);
+    }
+  }
+});
+
+// Error handling middleware for multer
+const handleMulterError = (error, req, res, next) => {
+  if (error instanceof multer.MulterError) {
+    if (error.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({ message: 'File too large. Maximum size is 5MB.' });
+    }
+    return res.status(400).json({ message: error.message });
+  } else if (error) {
+    return res.status(400).json({ message: error.message });
+  }
+  next();
+};
 
 // GET /api/users - List all users from Firestore
 router.get('/', async (req, res) => {
@@ -103,6 +143,10 @@ router.post('/', async (req, res) => {
         postcode: address.postcode,
         state: address.state
       };
+      // Add profile picture if provided
+      if (req.body.profilePicture) {
+        userData.profilePicture = req.body.profilePicture;
+      }
     }
 
     // Add sub-user specific data
@@ -584,6 +628,7 @@ router.get('/profile', verifyToken, async (req, res) => {
       hallName: userData.hallName || (userData.owner_profile?.hallName) || null,
       contactNumber: userData.contactNumber || (userData.owner_profile?.contactNumber) || null,
       address: userData.address || (userData.owner_profile?.address) || null,
+      profilePicture: userData.profilePicture || null,
       createdAt: userData.createdAt,
       updatedAt: userData.updatedAt
     };
@@ -811,5 +856,234 @@ router.get('/parent-data/:parentUserId', async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 });
+
+// Test endpoint to check Firebase Storage connectivity
+router.get('/test-storage', verifyToken, async (req, res) => {
+  try {
+    console.log('Testing Firebase Storage connectivity...');
+    
+    if (!bucket) {
+      return res.status(500).json({ 
+        message: 'Firebase Storage bucket not initialized',
+        bucketName: 'bms-pro-e3125.firebasestorage.app'
+      });
+    }
+    
+    // Test if we can access the bucket
+    const [exists] = await bucket.exists();
+    console.log('Bucket exists:', exists);
+    
+    if (!exists) {
+      return res.status(500).json({ 
+        message: 'Firebase Storage bucket does not exist',
+        bucketName: bucket.name,
+        suggestion: 'Please create the bucket in Firebase Console or check the bucket name'
+      });
+    }
+    
+    // Test if we can list files (just to verify permissions)
+    const [files] = await bucket.getFiles({ maxResults: 1 });
+    console.log('Storage test successful, can list files:', files.length);
+    
+    res.json({ 
+      message: 'Firebase Storage is working correctly',
+      bucketName: bucket.name,
+      bucketExists: exists,
+      canListFiles: true
+    });
+    
+  } catch (error) {
+    console.error('Firebase Storage test failed:', error);
+    res.status(500).json({ 
+      message: 'Firebase Storage test failed',
+      bucketName: bucket ? bucket.name : 'unknown',
+      error: error.message,
+      details: error.details || error.code
+    });
+  }
+});
+
+// POST /api/users/upload-profile-picture - Upload profile picture
+router.post('/upload-profile-picture', verifyToken, upload.single('profilePicture'), handleMulterError, async (req, res) => {
+  try {
+    const userId = req.user.uid;
+    const ipAddress = req.ip || req.connection.remoteAddress || req.headers['x-forwarded-for'];
+
+    console.log('Upload request received for user:', userId);
+    console.log('File info:', req.file ? {
+      originalname: req.file.originalname,
+      mimetype: req.file.mimetype,
+      size: req.file.size
+    } : 'No file');
+
+    if (!req.file) {
+      return res.status(400).json({ message: 'No file uploaded' });
+    }
+
+    // Check if Firebase Storage bucket is available
+    if (!bucket) {
+      return res.status(500).json({ 
+        message: 'Firebase Storage is not available. Please check your Firebase configuration.',
+        bucketName: 'bms-pro-e3125.firebasestorage.app'
+      });
+    }
+
+    // Verify bucket exists
+    const [bucketExists] = await bucket.exists();
+    if (!bucketExists) {
+      return res.status(500).json({ 
+        message: 'Firebase Storage bucket does not exist. Please create it in Firebase Console.',
+        bucketName: bucket.name,
+        instructions: 'Go to Firebase Console > Storage > Get Started to create the bucket'
+      });
+    }
+
+    // Generate unique filename
+    const fileExtension = req.file.originalname.split('.').pop();
+    const fileName = `profile-pictures/${userId}-${Date.now()}.${fileExtension}`;
+    
+    console.log('Uploading file to:', fileName);
+    
+    // Create file reference in Firebase Storage
+    const file = bucket.file(fileName);
+    
+    // Upload file to Firebase Storage
+    await file.save(req.file.buffer, {
+      metadata: {
+        contentType: req.file.mimetype,
+        metadata: {
+          uploadedBy: userId,
+          uploadedAt: new Date().toISOString()
+        }
+      }
+    });
+
+    console.log('File uploaded successfully to Firebase Storage');
+
+    // Make file publicly accessible
+    await file.makePublic();
+    console.log('File made public');
+    
+    // Get public URL
+    const publicUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
+    console.log('Public URL:', publicUrl);
+    
+    // Update user document in Firestore with profile picture URL
+    await admin.firestore().collection('users').doc(userId).update({
+      profilePicture: publicUrl,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    console.log('User document updated with profile picture URL');
+
+    // Log profile picture upload
+    const AuditService = require('../services/auditService');
+    const hallId = req.user?.hallId || 
+                   (req.user?.role === 'hall_owner' ? req.user?.uid : null) ||
+                   (req.user?.role === 'sub_user' && req.user?.parentUserId ? req.user?.parentUserId : null);
+    
+    await AuditService.logProfilePictureUpdated(
+      req.user?.uid || 'system',
+      req.user?.email || 'system',
+      req.user?.role || 'system',
+      publicUrl,
+      ipAddress,
+      hallId
+    );
+
+    console.log('Audit log created');
+
+    res.json({ 
+      message: 'Profile picture uploaded successfully',
+      profilePicture: publicUrl
+    });
+
+  } catch (error) {
+    console.error('Error uploading profile picture:', error);
+    
+    // Provide more specific error messages
+    if (error.code === 404) {
+      res.status(500).json({ 
+        message: 'Firebase Storage bucket not found. Please check your Firebase project configuration.',
+        error: 'Bucket does not exist',
+        bucketName: 'bms-pro-e3125.firebasestorage.app',
+        solution: 'Create the storage bucket in Firebase Console'
+      });
+    } else if (error.code === 403) {
+      res.status(500).json({ 
+        message: 'Permission denied. Please check your Firebase service account permissions.',
+        error: 'Insufficient permissions',
+        solution: 'Ensure service account has Storage Admin role'
+      });
+    } else {
+      res.status(500).json({ 
+        message: error.message || 'Error uploading profile picture',
+        error: error.code || 'Unknown error'
+      });
+    }
+  }
+});
+
+// DELETE /api/users/delete-profile-picture - Delete profile picture
+router.delete('/delete-profile-picture', verifyToken, async (req, res) => {
+  try {
+    const userId = req.user.uid;
+    const ipAddress = req.ip || req.connection.remoteAddress || req.headers['x-forwarded-for'];
+
+    // Get current user data
+    const userDoc = await admin.firestore().collection('users').doc(userId).get();
+    if (!userDoc.exists) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const userData = userDoc.data();
+    const currentProfilePicture = userData.profilePicture;
+
+    if (!currentProfilePicture) {
+      return res.status(400).json({ message: 'No profile picture to delete' });
+    }
+
+    // Extract filename from URL
+    const urlParts = currentProfilePicture.split('/');
+    const fileName = urlParts[urlParts.length - 1];
+    const fullPath = `profile-pictures/${fileName}`;
+
+    // Delete file from Firebase Storage
+    try {
+      const file = bucket.file(fullPath);
+      await file.delete();
+    } catch (storageError) {
+      console.warn('Error deleting file from storage:', storageError);
+      // Continue with database update even if file deletion fails
+    }
+
+    // Remove profile picture URL from user document
+    await admin.firestore().collection('users').doc(userId).update({
+      profilePicture: admin.firestore.FieldValue.delete(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    // Log profile picture deletion
+    const AuditService = require('../services/auditService');
+    const hallId = req.user?.hallId || 
+                   (req.user?.role === 'hall_owner' ? req.user?.uid : null) ||
+                   (req.user?.role === 'sub_user' && req.user?.parentUserId ? req.user?.parentUserId : null);
+    
+    await AuditService.logProfilePictureDeleted(
+      req.user?.uid || 'system',
+      req.user?.email || 'system',
+      req.user?.role || 'system',
+      ipAddress,
+      hallId
+    );
+
+    res.json({ message: 'Profile picture deleted successfully' });
+
+  } catch (error) {
+    console.error('Error deleting profile picture:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
 
 module.exports = router;

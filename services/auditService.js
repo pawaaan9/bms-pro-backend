@@ -764,6 +764,44 @@ class AuditService {
       additionalInfo: `Deleted payment of $${payment.amount} for invoice ${payment.invoiceNumber}`
     });
   }
+
+  static async logProfilePictureUpdated(userId, userEmail, userRole, profilePictureUrl, ipAddress, hallId) {
+    await this.logEvent({
+      userId,
+      userEmail,
+      userRole,
+      action: 'profile_picture_updated',
+      targetType: 'user',
+      target: `User: ${userEmail}`,
+      changes: {
+        new: {
+          profilePicture: profilePictureUrl
+        }
+      },
+      ipAddress,
+      hallId,
+      additionalInfo: `Profile picture updated for user ${userEmail}`
+    });
+  }
+
+  static async logProfilePictureDeleted(userId, userEmail, userRole, ipAddress, hallId) {
+    await this.logEvent({
+      userId,
+      userEmail,
+      userRole,
+      action: 'profile_picture_deleted',
+      targetType: 'user',
+      target: `User: ${userEmail}`,
+      changes: {
+        old: {
+          profilePicture: 'deleted'
+        }
+      },
+      ipAddress,
+      hallId,
+      additionalInfo: `Profile picture deleted for user ${userEmail}`
+    });
+  }
 }
 
 module.exports = AuditService;
