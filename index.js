@@ -67,32 +67,36 @@ app.use('/api/payments', paymentsRoutes);
 const quotationsRoutes = require('./routes/quotations');
 app.use('/api/quotations', quotationsRoutes);
 
-// Login endpoint (returns JWT token)
+// Login endpoint (verifies Firebase ID token and returns custom JWT)
 app.post('/api/login', async (req, res) => {
-  const { email, password } = req.body;
+  const { idToken } = req.body;
   const ipAddress = req.ip || req.connection.remoteAddress || req.headers['x-forwarded-for'];
   
-  if (!email || !password) {
-    return res.status(400).json({ message: 'Missing fields' });
+  if (!idToken) {
+    return res.status(400).json({ message: 'ID token is required' });
   }
+  
   try {
-    // For now, we'll skip password verification and just check if user exists
-    // In production, you should use Firebase Auth SDK on frontend for proper authentication
-    const user = await admin.auth().getUserByEmail(email);
-    const userDoc = await admin.firestore().collection('users').doc(user.uid).get();
+    // Verify the Firebase ID token
+    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    const uid = decodedToken.uid;
+    
+    // Get user data from Firestore
+    const userDoc = await admin.firestore().collection('users').doc(uid).get();
     if (!userDoc.exists) {
-      return res.status(404).json({ message: 'User not found' });
+      return res.status(404).json({ message: 'User not found in database' });
     }
+    
     const userData = userDoc.data();
     
-    console.log('Login attempt for user:', email);
+    console.log('Login attempt for user:', decodedToken.email);
     console.log('User data from Firestore:', JSON.stringify(userData, null, 2));
     
-    // Create JWT token
+    // Create custom JWT token
     const token = jwt.sign(
       { 
-        uid: user.uid, 
-        email: user.email, 
+        uid: uid, 
+        email: decodedToken.email, 
         role: userData.role 
       },
       process.env.JWT_SECRET || 'your-secret-key',
@@ -102,21 +106,38 @@ app.post('/api/login', async (req, res) => {
     // Log successful login
     const AuditService = require('./services/auditService');
     const hallId = userData.hallId || 
-                   (userData.role === 'hall_owner' ? user.uid : null) ||
+                   (userData.role === 'hall_owner' ? uid : null) ||
                    (userData.role === 'sub_user' && userData.parentUserId ? userData.parentUserId : null);
     
     await AuditService.logUserLogin(
-      user.uid,
-      email,
+      uid,
+      decodedToken.email,
       userData.role,
       ipAddress,
       hallId
     );
     
-    res.json({ token, role: userData.role });
+    res.json({ 
+      token, 
+      role: userData.role,
+      uid: uid,
+      email: decodedToken.email
+    });
   } catch (error) {
     console.error('Login error:', error);
-    res.status(500).json({ message: error.message });
+    
+    // Handle specific Firebase Auth errors
+    if (error.code === 'auth/invalid-id-token') {
+      return res.status(401).json({ message: 'Invalid ID token' });
+    }
+    if (error.code === 'auth/id-token-expired') {
+      return res.status(401).json({ message: 'ID token has expired' });
+    }
+    if (error.code === 'auth/user-disabled') {
+      return res.status(401).json({ message: 'User account has been disabled' });
+    }
+    
+    res.status(500).json({ message: 'Authentication failed' });
   }
 });
 

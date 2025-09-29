@@ -299,6 +299,35 @@ router.get('/settings', verifyToken, async (req, res) => {
   }
 });
 
+// POST /api/users/log-password-change - Log password change for audit purposes
+router.post('/log-password-change', verifyToken, async (req, res) => {
+  try {
+    const ipAddress = req.ip || req.connection.remoteAddress || req.headers['x-forwarded-for'];
+
+    // Log password change
+    const AuditService = require('../services/auditService');
+    const hallId = req.user?.hallId || 
+                   (req.user?.role === 'hall_owner' ? req.user?.uid : null) ||
+                   (req.user?.role === 'sub_user' && req.user?.parentUserId ? req.user?.parentUserId : null);
+    
+    await AuditService.logPasswordChanged(
+      req.user?.uid || 'system',
+      req.user?.email || 'system',
+      req.user?.role || 'system',
+      ipAddress,
+      hallId
+    );
+
+    res.json({ 
+      message: 'Password change logged successfully'
+    });
+
+  } catch (error) {
+    console.error('Error logging password change:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
 // PUT /api/users/:id - Update a user
 router.put('/:id', async (req, res) => {
   try {

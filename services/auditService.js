@@ -116,6 +116,20 @@ class AuditService {
     });
   }
 
+  static async logPasswordChanged(userId, userEmail, userRole, ipAddress, hallId = null) {
+    await this.logEvent({
+      userId,
+      userEmail,
+      userRole,
+      action: 'password_changed',
+      targetType: 'user',
+      target: `User: ${userEmail}`,
+      ipAddress,
+      hallId,
+      additionalInfo: 'User changed their password'
+    });
+  }
+
   /**
    * Log user management events
    */
