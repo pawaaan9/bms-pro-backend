@@ -328,6 +328,81 @@ router.post('/log-password-change', verifyToken, async (req, res) => {
   }
 });
 
+// PUT /api/users/change-sub-user-password - Change sub-user password (hall owner only)
+router.put('/change-sub-user-password', verifyToken, async (req, res) => {
+  try {
+    const { subUserId, newPassword } = req.body;
+    const ipAddress = req.ip || req.connection.remoteAddress || req.headers['x-forwarded-for'];
+
+    // Validate required fields
+    if (!subUserId || !newPassword) {
+      return res.status(400).json({ message: 'Sub-user ID and new password are required' });
+    }
+
+    // Validate new password strength
+    if (newPassword.length < 6) {
+      return res.status(400).json({ message: 'New password must be at least 6 characters long' });
+    }
+
+    // Only hall owners can change sub-user passwords
+    if (req.user.role !== 'hall_owner') {
+      return res.status(403).json({ message: 'Only hall owners can change sub-user passwords' });
+    }
+
+    // Check if the sub-user exists and belongs to this hall owner
+    const subUserDoc = await admin.firestore().collection('users').doc(subUserId).get();
+    if (!subUserDoc.exists) {
+      return res.status(404).json({ message: 'Sub-user not found' });
+    }
+
+    const subUserData = subUserDoc.data();
+    if (subUserData.role !== 'sub_user' || subUserData.parentUserId !== req.user.uid) {
+      return res.status(403).json({ message: 'You can only change passwords for your own sub-users' });
+    }
+
+    // Update password in Firebase Auth
+    try {
+      await admin.auth().updateUser(subUserId, {
+        password: newPassword
+      });
+
+      // Log password change for audit
+      const AuditService = require('../services/auditService');
+      const hallId = req.user.uid; // Hall owner's ID is the hall ID
+      
+      await AuditService.logSubUserPasswordChanged(
+        req.user.uid,
+        req.user.email,
+        req.user.role,
+        subUserData,
+        ipAddress,
+        hallId
+      );
+
+      res.json({ 
+        message: 'Sub-user password changed successfully'
+      });
+
+    } catch (authError) {
+      console.error('Firebase Auth error:', authError);
+      
+      // Handle specific Firebase Auth errors
+      if (authError.code === 'auth/weak-password') {
+        return res.status(400).json({ message: 'New password is too weak' });
+      }
+      if (authError.code === 'auth/user-not-found') {
+        return res.status(404).json({ message: 'Sub-user not found in authentication system' });
+      }
+      
+      throw authError;
+    }
+
+  } catch (error) {
+    console.error('Error changing sub-user password:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
 // PUT /api/users/:id - Update a user
 router.put('/:id', async (req, res) => {
   try {

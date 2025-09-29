@@ -130,6 +130,27 @@ class AuditService {
     });
   }
 
+  static async logSubUserPasswordChanged(hallOwnerId, hallOwnerEmail, hallOwnerRole, subUserData, ipAddress, hallId) {
+    await this.logEvent({
+      userId: hallOwnerId,
+      userEmail: hallOwnerEmail,
+      userRole: hallOwnerRole,
+      action: 'sub_user_password_changed',
+      targetType: 'user',
+      target: `Sub-User: ${subUserData.email}`,
+      changes: {
+        new: {
+          subUserId: subUserData.id,
+          subUserEmail: subUserData.email,
+          subUserName: subUserData.name || 'No name'
+        }
+      },
+      ipAddress,
+      hallId,
+      additionalInfo: `Hall owner changed password for sub-user: ${subUserData.name || subUserData.email}`
+    });
+  }
+
   /**
    * Log user management events
    */
