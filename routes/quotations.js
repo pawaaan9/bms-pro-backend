@@ -144,16 +144,32 @@ async function generateQuotationPDF(quotationData) {
          .text(`${quotationData.resource} - ${quotationData.eventType}`, 200, 425, { width: 240 })
          .text(`$${quotationData.totalAmount.toFixed(2)}`, 450, 425, { width: 95, align: 'right' });
 
+      // Deposit section (if applicable)
+      let currentY = 460;
+      if (quotationData.depositType && quotationData.depositType !== 'None') {
+        doc.rect(350, currentY, 205, 30)
+           .fill('#ffffff')
+           .stroke(secondaryColor, 1);
+        
+        doc.fillColor(darkGray)
+           .fontSize(11)
+           .font('Helvetica')
+           .text('Deposit:', 360, currentY + 10)
+           .text(`$${quotationData.depositAmount.toFixed(2)}`, 500, currentY + 10, { width: 45, align: 'right' });
+        
+        currentY += 35;
+      }
+
       // Total section
-      doc.rect(350, 460, 205, 40)
+      doc.rect(350, currentY, 205, 40)
          .fill(accentColor);
       
       doc.fillColor('#ffffff')
          .fontSize(16)
          .font('Helvetica-Bold')
-         .text('TOTAL AMOUNT', 360, 470)
+         .text('TOTAL AMOUNT', 360, currentY + 10)
          .fontSize(20)
-         .text(`$${quotationData.totalAmount.toFixed(2)} AUD`, 360, 485, { width: 185, align: 'right' });
+         .text(`$${quotationData.totalAmount.toFixed(2)} AUD`, 360, currentY + 25, { width: 185, align: 'right' });
 
       // Notes section
       if (quotationData.notes) {
@@ -181,9 +197,20 @@ async function generateQuotationPDF(quotationData) {
       doc.fillColor(secondaryColor)
          .fontSize(9)
          .font('Helvetica')
-         .text('• This quotation is valid until the date specified above.', 50, 630)
-         .text('• Payment terms: 50% deposit required to confirm booking.', 50, 645)
-         .text('• Cancellation policy applies as per venue terms.', 50, 660)
+         .text('• This quotation is valid until the date specified above.', 50, 630);
+      
+      // Add deposit terms based on deposit type
+      if (quotationData.depositType && quotationData.depositType !== 'None') {
+        if (quotationData.depositType === 'Fixed') {
+          doc.text(`• Payment terms: $${quotationData.depositAmount.toFixed(2)} deposit required to confirm booking.`, 50, 645);
+        } else if (quotationData.depositType === 'Percentage') {
+          doc.text(`• Payment terms: ${quotationData.depositValue}% ($${quotationData.depositAmount.toFixed(2)}) deposit required to confirm booking.`, 50, 645);
+        }
+      } else {
+        doc.text('• Payment terms: 50% deposit required to confirm booking.', 50, 645);
+      }
+      
+      doc.text('• Cancellation policy applies as per venue terms.', 50, 660)
          .text('• Prices are subject to change without notice.', 50, 675)
          .text('• All bookings are subject to venue availability and approval.', 50, 690);
 
@@ -246,13 +273,34 @@ router.post('/', verifyToken, async (req, res) => {
       guestCount,
       totalAmount,
       validUntil,
-      notes
+      notes,
+      depositType,
+      depositValue
     } = req.body;
 
     // Validate required fields
     if (!customerName || !customerEmail || !customerPhone || !eventType || !resource || !eventDate || !startTime || !endTime || !totalAmount) {
       return res.status(400).json({
         message: 'Missing required fields'
+      });
+    }
+
+    // Validate deposit fields
+    if (depositType && !['None', 'Fixed', 'Percentage'].includes(depositType)) {
+      return res.status(400).json({
+        message: 'Invalid deposit type. Must be one of: None, Fixed, Percentage'
+      });
+    }
+
+    if (depositType === 'Fixed' && (!depositValue || depositValue <= 0)) {
+      return res.status(400).json({
+        message: 'Deposit value is required and must be greater than 0 for Fixed deposit type'
+      });
+    }
+
+    if (depositType === 'Percentage' && (!depositValue || depositValue <= 0 || depositValue > 100)) {
+      return res.status(400).json({
+        message: 'Deposit percentage must be between 1 and 100'
       });
     }
 
@@ -285,6 +333,14 @@ router.post('/', verifyToken, async (req, res) => {
     // Generate quotation ID
     const quotationId = `QUO-${Date.now().toString().slice(-6)}`;
 
+    // Calculate deposit amount
+    let depositAmount = 0;
+    if (depositType === 'Fixed') {
+      depositAmount = parseFloat(depositValue);
+    } else if (depositType === 'Percentage') {
+      depositAmount = (parseFloat(totalAmount) * parseFloat(depositValue)) / 100;
+    }
+
     // Create quotation data
     const quotationData = {
       id: quotationId,
@@ -298,6 +354,9 @@ router.post('/', verifyToken, async (req, res) => {
       endTime: endTime,
       guestCount: guestCount ? parseInt(guestCount) : null,
       totalAmount: parseFloat(totalAmount),
+      depositType: depositType || 'None',
+      depositValue: depositValue ? parseFloat(depositValue) : 0,
+      depositAmount: depositAmount,
       validUntil: validUntil || new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(), // 14 days from now
       status: 'Draft',
       notes: notes || '',
@@ -588,6 +647,10 @@ router.put('/:id/status', verifyToken, async (req, res) => {
           },
           bookingSource: 'quotation',
           quotationId: quotationData.id,
+          // Deposit information from quotation
+          depositType: quotationData.depositType || 'None',
+          depositValue: quotationData.depositValue || 0,
+          depositAmount: quotationData.depositAmount || 0,
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
           updatedAt: admin.firestore.FieldValue.serverTimestamp()
         };

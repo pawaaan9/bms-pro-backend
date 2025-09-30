@@ -162,27 +162,40 @@ async function generateInvoicePDF(invoiceData) {
          .text(`$${invoiceData.subtotal.toFixed(2)}`, 500, 425, { width: 45, align: 'right' });
 
       // Totals section
-      doc.rect(350, 460, 205, 80)
+      let currentY = 460;
+      const totalsHeight = invoiceData.depositPaid > 0 ? 100 : 80; // Extra space for deposit info
+      
+      doc.rect(350, currentY, 205, totalsHeight)
          .fill('#ffffff')
          .stroke(secondaryColor, 1);
       
       doc.fillColor(darkGray)
          .fontSize(11)
          .font('Helvetica')
-         .text('Subtotal:', 360, 470)
-         .text(`$${invoiceData.subtotal.toFixed(2)}`, 500, 470, { width: 45, align: 'right' })
-         .text('GST (10%):', 360, 485)
-         .text(`$${invoiceData.gst.toFixed(2)}`, 500, 485, { width: 45, align: 'right' });
+         .text('Subtotal:', 360, currentY + 10)
+         .text(`$${invoiceData.subtotal.toFixed(2)}`, 500, currentY + 10, { width: 45, align: 'right' })
+         .text('GST (10%):', 360, currentY + 25)
+         .text(`$${invoiceData.gst.toFixed(2)}`, 500, currentY + 25, { width: 45, align: 'right' });
       
-      doc.rect(350, 500, 205, 40)
+      // Add deposit information if applicable
+      if (invoiceData.depositPaid > 0) {
+        doc.text('Total Amount:', 360, currentY + 40)
+           .text(`$${invoiceData.total.toFixed(2)}`, 500, currentY + 40, { width: 45, align: 'right' })
+           .text('Deposit Paid:', 360, currentY + 55)
+           .text(`-$${invoiceData.depositPaid.toFixed(2)}`, 500, currentY + 55, { width: 45, align: 'right' });
+        
+        currentY += 20; // Extra space for deposit line
+      }
+      
+      doc.rect(350, currentY + 40, 205, 40)
          .fill(accentColor);
       
       doc.fillColor('#ffffff')
          .fontSize(16)
          .font('Helvetica-Bold')
-         .text('TOTAL AMOUNT', 360, 510)
+         .text('FINAL AMOUNT', 360, currentY + 50)
          .fontSize(20)
-         .text(`$${invoiceData.total.toFixed(2)} AUD`, 360, 525, { width: 185, align: 'right' });
+         .text(`$${invoiceData.finalTotal.toFixed(2)} AUD`, 360, currentY + 65, { width: 185, align: 'right' });
 
       // Payment information
       doc.fillColor(primaryColor)
@@ -336,6 +349,47 @@ router.post('/', verifyToken, async (req, res) => {
     const gst = calculateGST(subtotal);
     const total = subtotal + gst;
 
+    // Check if this is a final invoice for a booking from quotation with deposit
+    let finalTotal = total;
+    let depositPaid = 0;
+    let depositInfo = null;
+    
+    console.log('Invoice creation - checking deposit info:', {
+      invoiceType,
+      bookingSource: bookingData.bookingSource,
+      depositType: bookingData.depositType,
+      depositAmount: bookingData.depositAmount,
+      depositValue: bookingData.depositValue
+    });
+    
+    if (invoiceType === 'FINAL' && bookingData.bookingSource === 'quotation' && 
+        bookingData.depositType && bookingData.depositType !== 'None') {
+      depositPaid = bookingData.depositAmount || 0;
+      finalTotal = total - depositPaid;
+      depositInfo = {
+        type: bookingData.depositType,
+        value: bookingData.depositValue,
+        amount: depositPaid
+      };
+      
+      console.log('Deposit applied to final invoice:', {
+        originalTotal: total,
+        depositPaid: depositPaid,
+        finalTotal: finalTotal,
+        depositInfo: depositInfo
+      });
+    } else if (invoiceType === 'DEPOSIT' && bookingData.bookingSource === 'quotation' && 
+               bookingData.depositType && bookingData.depositType !== 'None') {
+      // For deposit invoices, the amount should match the deposit amount
+      const expectedDepositAmount = bookingData.depositAmount || 0;
+      if (Math.abs(parseFloat(amount) - expectedDepositAmount) > 0.01) {
+        console.log('Warning: Deposit invoice amount does not match expected deposit amount:', {
+          invoiceAmount: parseFloat(amount),
+          expectedDepositAmount: expectedDepositAmount
+        });
+      }
+    }
+
     // Create invoice data
     const invoiceData = {
       invoiceNumber: generateInvoiceNumber(),
@@ -354,6 +408,9 @@ router.post('/', verifyToken, async (req, res) => {
       subtotal: subtotal,
       gst: gst,
       total: total,
+      finalTotal: finalTotal, // Final amount after deposit deduction
+      depositPaid: depositPaid, // Amount already paid as deposit
+      depositInfo: depositInfo, // Deposit details
       paidAmount: 0,
       status: 'DRAFT',
       description: description || `${bookingData.eventType} - ${invoiceType} Payment`,
