@@ -804,7 +804,23 @@ class EmailService {
   async sendInvoiceEmail(invoiceData, pdfBuffer) {
     try {
       const subject = `Invoice ${invoiceData.invoiceNumber} - ${invoiceData.invoiceType}`;
-      const message = `Dear ${invoiceData.customer.name},\n\nPlease find attached your invoice for ${invoiceData.invoiceType} payment.\n\nInvoice Details:\n- Invoice Number: ${invoiceData.invoiceNumber}\n- Issue Date: ${new Date(invoiceData.issueDate).toLocaleDateString()}\n- Due Date: ${new Date(invoiceData.dueDate).toLocaleDateString()}\n- Total Amount: $${invoiceData.total.toFixed(2)} AUD\n- Status: ${invoiceData.status}\n\nPayment is due within 30 days of the invoice date. Please refer to the attached PDF for payment details and bank information.\n\nThank you for your business!`;
+      
+      // Enhanced message with deposit information
+      let message = `Dear ${invoiceData.customer.name},\n\nPlease find attached your invoice for ${invoiceData.invoiceType} payment.\n\nInvoice Details:\n- Invoice Number: ${invoiceData.invoiceNumber}\n- Issue Date: ${new Date(invoiceData.issueDate).toLocaleDateString()}\n- Due Date: ${new Date(invoiceData.dueDate).toLocaleDateString()}\n- Booking Source: ${invoiceData.bookingSource || 'Direct'}`;
+      
+      // Add quotation information if applicable
+      if (invoiceData.bookingSource === 'quotation' && invoiceData.quotationId) {
+        message += `\n- Quotation ID: ${invoiceData.quotationId}`;
+      }
+      
+      // Add deposit and final price information
+      if (invoiceData.depositPaid > 0) {
+        message += `\n\n💰 PAYMENT BREAKDOWN:\n- Subtotal: $${invoiceData.subtotal.toFixed(2)} AUD\n- GST (10%): $${invoiceData.gst.toFixed(2)} AUD\n- Total Amount: $${invoiceData.total.toFixed(2)} AUD\n- 💰 Deposit Already Paid: $${invoiceData.depositPaid.toFixed(2)} AUD\n\n💳 AMOUNT YOU NEED TO PAY: $${invoiceData.finalTotal.toFixed(2)} AUD\n\nCalculation: $${invoiceData.total.toFixed(2)} - $${invoiceData.depositPaid.toFixed(2)} = $${invoiceData.finalTotal.toFixed(2)} AUD`;
+      } else {
+        message += `\n\n💳 AMOUNT YOU NEED TO PAY: $${invoiceData.total.toFixed(2)} AUD`;
+      }
+      
+      message += `\n- Status: ${invoiceData.status}\n\nPayment is due within 30 days of the invoice date. Please refer to the attached PDF for payment details and bank information.\n\nThank you for your business!`;
 
       const mailOptions = {
         from: 'pawankanchana34741@gmail.com',
@@ -881,6 +897,16 @@ class EmailService {
                   <td style="padding: 8px 0; color: #1e293b;">${invoiceData.invoiceType}</td>
                 </tr>
                 <tr>
+                  <td style="padding: 8px 0; color: #64748b; font-weight: bold;">Booking Source:</td>
+                  <td style="padding: 8px 0; color: #1e293b;">${invoiceData.bookingSource || 'Direct'}</td>
+                </tr>
+                ${invoiceData.bookingSource === 'quotation' && invoiceData.quotationId ? `
+                <tr>
+                  <td style="padding: 8px 0; color: #64748b; font-weight: bold;">Quotation ID:</td>
+                  <td style="padding: 8px 0; color: #1e293b;">${invoiceData.quotationId}</td>
+                </tr>
+                ` : ''}
+                <tr>
                   <td style="padding: 8px 0; color: #64748b; font-weight: bold;">Subtotal:</td>
                   <td style="padding: 8px 0; color: #1e293b;">$${invoiceData.subtotal.toFixed(2)}</td>
                 </tr>
@@ -890,10 +916,47 @@ class EmailService {
                 </tr>
                 <tr>
                   <td style="padding: 8px 0; color: #64748b; font-weight: bold;">Total Amount:</td>
-                  <td style="padding: 8px 0; color: #059669; font-weight: bold; font-size: 18px;">$${invoiceData.total.toFixed(2)} AUD</td>
+                  <td style="padding: 8px 0; color: #1e293b;">$${invoiceData.total.toFixed(2)}</td>
                 </tr>
+                ${invoiceData.depositPaid > 0 ? `
+                <tr style="background-color: #dbeafe;">
+                  <td style="padding: 12px 8px; color: #1e40af; font-weight: bold; font-size: 16px;">💰 Deposit Already Paid:</td>
+                  <td style="padding: 12px 8px; color: #1e40af; font-weight: bold; font-size: 16px;">-$${invoiceData.depositPaid.toFixed(2)} AUD</td>
+                </tr>
+                <tr style="background-color: #dcfce7; border: 2px solid #22c55e;">
+                  <td style="padding: 15px 8px; color: #166534; font-weight: bold; font-size: 20px;">💳 Amount You Need to Pay:</td>
+                  <td style="padding: 15px 8px; color: #166534; font-weight: bold; font-size: 20px;">$${invoiceData.finalTotal.toFixed(2)} AUD</td>
+                </tr>
+                ` : `
+                <tr style="background-color: #dcfce7; border: 2px solid #22c55e;">
+                  <td style="padding: 15px 8px; color: #166534; font-weight: bold; font-size: 20px;">💳 Amount Due:</td>
+                  <td style="padding: 15px 8px; color: #166534; font-weight: bold; font-size: 20px;">$${invoiceData.total.toFixed(2)} AUD</td>
+                </tr>
+                `}
               </table>
             </div>
+            
+            ${invoiceData.bookingSource === 'quotation' && invoiceData.quotationId ? `
+            <div style="background-color: #fef3c7; border: 2px solid #f59e0b; border-radius: 8px; padding: 20px; margin: 20px 0;">
+              <h3 style="color: #92400e; margin: 0 0 15px 0; font-size: 18px;">📋 Quotation Information</h3>
+              <div style="color: #92400e; font-size: 14px; line-height: 1.6;">
+                <p style="margin: 0 0 10px 0;">This invoice is based on your accepted quotation <strong>${invoiceData.quotationId}</strong>.</p>
+                ${invoiceData.depositPaid > 0 ? `
+                <div style="background-color: #dbeafe; border: 1px solid #3b82f6; border-radius: 6px; padding: 12px; margin: 10px 0;">
+                  <p style="margin: 0 0 8px 0; color: #1e40af; font-weight: bold;">💰 Deposit Information:</p>
+                  <p style="margin: 0 0 8px 0; color: #1e40af;">Your deposit of <strong>$${invoiceData.depositPaid.toFixed(2)} AUD</strong> has been deducted from the total amount.</p>
+                </div>
+                <div style="background-color: #dcfce7; border: 2px solid #22c55e; border-radius: 6px; padding: 12px; margin: 10px 0;">
+                  <p style="margin: 0; color: #166534; font-weight: bold; font-size: 16px;">💳 Amount You Need to Pay: <strong>$${invoiceData.finalTotal.toFixed(2)} AUD</strong></p>
+                </div>
+                ` : `
+                <div style="background-color: #dcfce7; border: 2px solid #22c55e; border-radius: 6px; padding: 12px; margin: 10px 0;">
+                  <p style="margin: 0; color: #166534; font-weight: bold; font-size: 16px;">💳 Amount You Need to Pay: <strong>$${invoiceData.total.toFixed(2)} AUD</strong></p>
+                </div>
+                `}
+              </div>
+            </div>
+            ` : ''}
             
             <div style="background-color: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: 20px; margin: 20px 0;">
               <h3 style="color: #92400e; margin: 0 0 15px 0;">Payment Information</h3>

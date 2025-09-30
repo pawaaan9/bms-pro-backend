@@ -321,7 +321,7 @@ router.post('/admin', verifyToken, async (req, res) => {
       status: status,
       calculatedPrice: calculatedPrice,
       priceDetails: priceDetails,
-      bookingSource: 'admin_panel', // Track that this was created by admin
+      bookingSource: 'admin', // Track that this was created by admin
       createdBy: userId, // Track which admin created this booking
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp()

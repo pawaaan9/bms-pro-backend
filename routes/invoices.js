@@ -127,42 +127,78 @@ async function generateInvoicePDF(invoiceData) {
          .fontSize(10)
          .font('Helvetica')
          .text(invoiceData.resource, 320, 295)
-         .text(`Booking ID: ${invoiceData.bookingId}`, 320, 310)
-         .text(`Type: ${invoiceData.invoiceType}`, 320, 325);
+         .text(`Booking ID: ${invoiceData.bookingId}`, 320, 310);
+      
+      // Add booking source and quotation info if applicable
+      if (invoiceData.bookingSource === 'quotation' && invoiceData.quotationId) {
+        doc.text(`Booking Source: Quotation`, 320, 325)
+           .text(`Quotation ID: ${invoiceData.quotationId}`, 320, 340);
+      } else {
+        doc.text(`Booking Source: ${invoiceData.bookingSource || 'Direct'}`, 320, 325);
+      }
+
+      // Quotation information section (if applicable)
+      if (invoiceData.bookingSource === 'quotation' && invoiceData.quotationId) {
+        doc.fillColor(primaryColor)
+           .fontSize(14)
+           .font('Helvetica-Bold')
+           .text('QUOTATION INFORMATION', 50, 380);
+        
+        doc.rect(50, 390, 505, 40)
+           .fill('#fef3c7')
+           .stroke('#f59e0b', 1);
+        
+        doc.fillColor('#92400e')
+           .fontSize(10)
+           .font('Helvetica-Bold')
+           .text('This invoice is based on an accepted quotation:', 60, 400);
+        
+        doc.fillColor('#b45309')
+           .fontSize(9)
+           .font('Helvetica')
+           .text(`Quotation ID: ${invoiceData.quotationId}`, 60, 415)
+           .text(`Original Quotation Amount: $${invoiceData.calculationBreakdown?.quotationTotal?.toFixed(2) || '0.00'} AUD`, 60, 425);
+        
+        if (invoiceData.depositPaid > 0) {
+          doc.text(`Deposit Already Paid: $${invoiceData.depositPaid.toFixed(2)} AUD`, 300, 415)
+             .text(`Final Amount Due: $${invoiceData.finalTotal.toFixed(2)} AUD`, 300, 425);
+        }
+      }
 
       // Line items table
       doc.fillColor(primaryColor)
          .fontSize(14)
          .font('Helvetica-Bold')
-         .text('INVOICE ITEMS', 50, 380);
+         .text('INVOICE ITEMS', 50, invoiceData.bookingSource === 'quotation' ? 450 : 380);
       
       // Table header
-      doc.rect(50, 390, 505, 25)
+      const tableStartY = invoiceData.bookingSource === 'quotation' ? 460 : 390;
+      doc.rect(50, tableStartY, 505, 25)
          .fill(primaryColor);
       
       doc.fillColor('#ffffff')
          .fontSize(11)
          .font('Helvetica-Bold')
-         .text('Description', 60, 398)
-         .text('Qty', 350, 398)
-         .text('Unit Price', 400, 398)
-         .text('Amount', 500, 398, { width: 45, align: 'right' });
+         .text('Description', 60, tableStartY + 8)
+         .text('Qty', 350, tableStartY + 8)
+         .text('Unit Price', 400, tableStartY + 8)
+         .text('Amount', 500, tableStartY + 8, { width: 45, align: 'right' });
 
       // Table row
-      doc.rect(50, 415, 505, 30)
+      doc.rect(50, tableStartY + 25, 505, 30)
          .fill('#ffffff')
          .stroke(secondaryColor, 1);
       
       doc.fillColor(darkGray)
          .fontSize(10)
          .font('Helvetica')
-         .text(invoiceData.description, 60, 425, { width: 280 })
-         .text('1', 350, 425)
-         .text(`$${invoiceData.subtotal.toFixed(2)}`, 400, 425)
-         .text(`$${invoiceData.subtotal.toFixed(2)}`, 500, 425, { width: 45, align: 'right' });
+         .text(invoiceData.description, 60, tableStartY + 35, { width: 280 })
+         .text('1', 350, tableStartY + 35)
+         .text(`$${invoiceData.subtotal.toFixed(2)}`, 400, tableStartY + 35)
+         .text(`$${invoiceData.subtotal.toFixed(2)}`, 500, tableStartY + 35, { width: 45, align: 'right' });
 
       // Totals section
-      let currentY = 460;
+      let currentY = tableStartY + 70; // Position after table
       const totalsHeight = invoiceData.depositPaid > 0 ? 100 : 80; // Extra space for deposit info
       
       doc.rect(350, currentY, 205, totalsHeight)
@@ -184,7 +220,13 @@ async function generateInvoicePDF(invoiceData) {
            .text('Deposit Paid:', 360, currentY + 55)
            .text(`-$${invoiceData.depositPaid.toFixed(2)}`, 500, currentY + 55, { width: 45, align: 'right' });
         
-        currentY += 20; // Extra space for deposit line
+        // Add calculation explanation
+        doc.fillColor(secondaryColor)
+           .fontSize(8)
+           .font('Helvetica')
+           .text(`Calculation: $${invoiceData.total.toFixed(2)} - $${invoiceData.depositPaid.toFixed(2)} = $${invoiceData.finalTotal.toFixed(2)}`, 360, currentY + 70, { width: 185, align: 'center' });
+        
+        currentY += 30; // Extra space for deposit line and calculation
       }
       
       doc.rect(350, currentY + 40, 205, 40)
@@ -197,58 +239,107 @@ async function generateInvoicePDF(invoiceData) {
          .fontSize(20)
          .text(`$${invoiceData.finalTotal.toFixed(2)} AUD`, 360, currentY + 65, { width: 185, align: 'right' });
 
+      // Add calculation summary box
+      if (invoiceData.depositPaid > 0) {
+        doc.rect(50, currentY + 100, 505, 40)
+           .fill('#f8fafc')
+           .stroke('#e2e8f0', 1);
+        
+        doc.fillColor('#1e293b')
+           .fontSize(12)
+           .font('Helvetica-Bold')
+           .text('CALCULATION SUMMARY', 60, currentY + 115);
+        
+        doc.fillColor('#475569')
+           .fontSize(10)
+           .font('Helvetica')
+           .text(invoiceData.calculationBreakdown?.formula || `Final Amount = $${invoiceData.total.toFixed(2)} - $${invoiceData.depositPaid.toFixed(2)} = $${invoiceData.finalTotal.toFixed(2)}`, 60, currentY + 130, { width: 485 });
+      }
+
+      // Deposit information section (if applicable)
+      let paymentSectionY = invoiceData.depositPaid > 0 ? 600 : 560; // Adjust based on calculation summary
+      if (invoiceData.depositPaid > 0) {
+        doc.fillColor(primaryColor)
+           .fontSize(14)
+           .font('Helvetica-Bold')
+           .text('DEPOSIT INFORMATION', 50, paymentSectionY);
+        
+        doc.rect(50, paymentSectionY + 10, 505, 50)
+           .fill('#f0f9ff')
+           .stroke('#0ea5e9', 1);
+        
+        doc.fillColor('#0c4a6e')
+           .fontSize(10)
+           .font('Helvetica-Bold')
+           .text('Deposit Details:', 60, paymentSectionY + 20);
+        
+        doc.fillColor('#0369a1')
+           .fontSize(9)
+           .font('Helvetica')
+           .text(`Type: ${invoiceData.depositInfo?.type || 'Fixed'}`, 60, paymentSectionY + 35)
+           .text(`Amount Paid: $${invoiceData.depositPaid.toFixed(2)} AUD`, 60, paymentSectionY + 48);
+        
+        if (invoiceData.depositInfo?.type === 'Percentage') {
+          doc.text(`Percentage: ${invoiceData.depositInfo?.value}%`, 300, paymentSectionY + 35);
+        }
+        
+        paymentSectionY += 70; // Move payment section down
+      }
+
       // Payment information
       doc.fillColor(primaryColor)
          .fontSize(14)
          .font('Helvetica-Bold')
-         .text('PAYMENT INFORMATION', 50, 560);
+         .text('PAYMENT INFORMATION', 50, paymentSectionY);
       
-      doc.rect(50, 570, 505, 60)
+      doc.rect(50, paymentSectionY + 10, 505, 60)
          .fill('#ffffff')
          .stroke(secondaryColor, 1);
       
       doc.fillColor(secondaryColor)
          .fontSize(10)
          .font('Helvetica')
-         .text('Payment Method: Bank Transfer', 60, 580)
-         .text('Account Name: Cranbourne Public Hall', 60, 595)
-         .text('BSB: 123-456', 60, 610)
-         .text('Account Number: 12345678', 60, 625);
+         .text('Payment Method: Bank Transfer', 60, paymentSectionY + 20)
+         .text('Account Name: Cranbourne Public Hall', 60, paymentSectionY + 35)
+         .text('BSB: 123-456', 60, paymentSectionY + 50)
+         .text('Account Number: 12345678', 60, paymentSectionY + 65);
 
       // Notes section (if exists, make it more compact)
+      let notesSectionY = paymentSectionY + 80;
       if (invoiceData.notes) {
         doc.fillColor(primaryColor)
            .fontSize(12)
            .font('Helvetica-Bold')
-           .text('ADDITIONAL NOTES', 50, 560);
+           .text('ADDITIONAL NOTES', 50, notesSectionY);
         
-        doc.rect(50, 570, 505, 30)
+        doc.rect(50, notesSectionY + 10, 505, 30)
            .fill('#ffffff')
            .stroke(secondaryColor, 1);
         
         doc.fillColor(secondaryColor)
            .fontSize(9)
            .font('Helvetica')
-           .text(invoiceData.notes, 60, 580, { width: 485 });
+           .text(invoiceData.notes, 60, notesSectionY + 20, { width: 485 });
+        
+        notesSectionY += 50;
       }
 
       // Terms and conditions (more compact)
-      const notesHeight = invoiceData.notes ? 40 : 0;
       doc.fillColor(primaryColor)
          .fontSize(12)
          .font('Helvetica-Bold')
-         .text('TERMS & CONDITIONS', 50, 560 + notesHeight);
+         .text('TERMS & CONDITIONS', 50, notesSectionY);
       
       doc.fillColor(secondaryColor)
          .fontSize(8)
          .font('Helvetica')
-         .text('• Payment is due within 30 days of invoice date.', 50, 580 + notesHeight)
-         .text('• Late payments may incur additional charges.', 50, 592 + notesHeight)
-         .text('• All prices include GST where applicable.', 50, 604 + notesHeight)
-         .text('• For payment inquiries, please contact us directly.', 50, 616 + notesHeight);
+         .text('• Payment is due within 30 days of invoice date.', 50, notesSectionY + 15)
+         .text('• Late payments may incur additional charges.', 50, notesSectionY + 27)
+         .text('• All prices include GST where applicable.', 50, notesSectionY + 39)
+         .text('• For payment inquiries, please contact us directly.', 50, notesSectionY + 51);
 
       // Footer (more compact)
-      const footerY = 640 + notesHeight;
+      const footerY = notesSectionY + 80;
       doc.rect(0, footerY, 595, 30)
          .fill(lightGray);
       
@@ -403,6 +494,8 @@ router.post('/', verifyToken, async (req, res) => {
       },
       hallOwnerId: actualHallOwnerId,
       resource: bookingData.hallName || bookingData.selectedHall,
+      bookingSource: bookingData.bookingSource || 'direct', // Store booking source
+      quotationId: bookingData.quotationId || null, // Store quotation ID if applicable
       issueDate: new Date(),
       dueDate: dueDate ? new Date(dueDate) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days from now
       subtotal: subtotal,
@@ -411,6 +504,14 @@ router.post('/', verifyToken, async (req, res) => {
       finalTotal: finalTotal, // Final amount after deposit deduction
       depositPaid: depositPaid, // Amount already paid as deposit
       depositInfo: depositInfo, // Deposit details
+      calculationBreakdown: {
+        quotationTotal: subtotal,
+        gstAmount: gst,
+        totalWithGST: total,
+        depositDeduction: depositPaid,
+        finalAmount: finalTotal,
+        formula: depositPaid > 0 ? `Final Amount = (${subtotal} + ${gst}) - ${depositPaid} = ${finalTotal}` : `Final Amount = ${subtotal} + ${gst} = ${total}`
+      },
       paidAmount: 0,
       status: 'DRAFT',
       description: description || `${bookingData.eventType} - ${invoiceType} Payment`,
@@ -521,18 +622,38 @@ router.get('/hall-owner/:hallOwnerId', verifyToken, async (req, res) => {
       .where('hallOwnerId', '==', actualHallOwnerId)
       .get();
 
-    const invoices = invoicesSnapshot.docs.map(doc => {
+    const invoices = await Promise.all(invoicesSnapshot.docs.map(async (doc) => {
       const data = doc.data();
+      
+      // Fetch booking source from associated booking if bookingId exists
+      let bookingSource = data.bookingSource;
+      let quotationId = data.quotationId;
+      
+      if (data.bookingId && !bookingSource) {
+        try {
+          const bookingDoc = await admin.firestore().collection('bookings').doc(data.bookingId).get();
+          if (bookingDoc.exists) {
+            const bookingData = bookingDoc.data();
+            bookingSource = bookingData.bookingSource;
+            quotationId = bookingData.quotationId;
+          }
+        } catch (error) {
+          console.error('Error fetching booking data for invoice:', error);
+        }
+      }
+      
       return {
         id: doc.id,
         ...data,
+        bookingSource: bookingSource || 'direct',
+        quotationId: quotationId,
         issueDate: data.issueDate?.toDate?.() || null,
         dueDate: data.dueDate?.toDate?.() || null,
         sentAt: data.sentAt?.toDate?.() || null,
         createdAt: data.createdAt?.toDate?.() || null,
         updatedAt: data.updatedAt?.toDate?.() || null
       };
-    });
+    }));
 
     // Sort invoices by createdAt in descending order (newest first)
     invoices.sort((a, b) => {
@@ -806,9 +927,28 @@ router.get('/:id', verifyToken, async (req, res) => {
       return res.status(403).json({ message: 'Access denied. Only hall owners and sub-users can view invoices.' });
     }
 
+    // Fetch booking source from associated booking if bookingId exists
+    let bookingSource = invoiceData.bookingSource;
+    let quotationId = invoiceData.quotationId;
+    
+    if (invoiceData.bookingId && !bookingSource) {
+      try {
+        const bookingDoc = await admin.firestore().collection('bookings').doc(invoiceData.bookingId).get();
+        if (bookingDoc.exists) {
+          const bookingData = bookingDoc.data();
+          bookingSource = bookingData.bookingSource;
+          quotationId = bookingData.quotationId;
+        }
+      } catch (error) {
+        console.error('Error fetching booking data for invoice:', error);
+      }
+    }
+
     res.json({
       id: invoiceDoc.id,
       ...invoiceData,
+      bookingSource: bookingSource || 'direct',
+      quotationId: quotationId,
       issueDate: invoiceData.issueDate?.toDate?.() || null,
       dueDate: invoiceData.dueDate?.toDate?.() || null,
       sentAt: invoiceData.sentAt?.toDate?.() || null,
