@@ -802,6 +802,29 @@ class AuditService {
       additionalInfo: `Profile picture deleted for user ${userEmail}`
     });
   }
+
+  /**
+   * Log when invoice reminders are sent
+   */
+  static async logInvoiceRemindersSent(userId, userEmail, userRole, reminderData, ipAddress, hallId) {
+    return this.logEvent({
+      userId,
+      userEmail,
+      userRole,
+      action: 'invoice_reminders_sent',
+      targetType: 'invoice_reminders',
+      target: `Payment reminders sent for ${reminderData.sentCount} invoice(s)`,
+      changes: {
+        invoiceIds: reminderData.invoiceIds,
+        sentCount: reminderData.sentCount,
+        failedCount: reminderData.failedCount,
+        totalRequested: reminderData.totalRequested
+      },
+      ipAddress,
+      hallId,
+      additionalInfo: `Sent ${reminderData.sentCount} payment reminders out of ${reminderData.totalRequested} requested. ${reminderData.failedCount} failed.`
+    });
+  }
 }
 
 module.exports = AuditService;

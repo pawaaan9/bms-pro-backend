@@ -962,6 +962,167 @@ router.get('/:id', verifyToken, async (req, res) => {
   }
 });
 
+// POST /api/invoices/send-reminders - Send payment reminders for multiple invoices
+router.post('/send-reminders', verifyToken, async (req, res) => {
+  try {
+    const { invoiceIds, hallOwnerId } = req.body;
+    const userId = req.user.uid;
+    const ipAddress = req.ip || req.connection.remoteAddress || req.headers['x-forwarded-for'];
+
+    // Validate required fields
+    if (!invoiceIds || !Array.isArray(invoiceIds) || invoiceIds.length === 0) {
+      return res.status(400).json({
+        message: 'invoiceIds array is required and must not be empty'
+      });
+    }
+
+    if (!hallOwnerId) {
+      return res.status(400).json({
+        message: 'hallOwnerId is required'
+      });
+    }
+
+    // Get user data to verify they are a hall_owner or sub_user
+    const userDoc = await admin.firestore().collection('users').doc(userId).get();
+    if (!userDoc.exists) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const userData = userDoc.data();
+    
+    // Determine the actual hall owner ID
+    let actualHallOwnerId = hallOwnerId;
+    
+    if (userData.role === 'sub_user') {
+      if (!userData.parentUserId) {
+        return res.status(403).json({ message: 'Access denied. Sub-user has no parent hall owner.' });
+      }
+      actualHallOwnerId = userData.parentUserId;
+      
+      if (actualHallOwnerId !== hallOwnerId) {
+        return res.status(403).json({ message: 'Access denied. You can only send reminders for your parent hall owner\'s invoices.' });
+      }
+    } else if (userData.role === 'hall_owner') {
+      if (userId !== hallOwnerId) {
+        return res.status(403).json({ message: 'Access denied. You can only send reminders for your own invoices.' });
+      }
+    } else {
+      return res.status(403).json({ message: 'Access denied. Only hall owners and sub-users can send reminders.' });
+    }
+
+    console.log('Send reminders - Processing invoices:', { invoiceIds, actualHallOwnerId, userId });
+
+    // Fetch all invoices
+    const invoicePromises = invoiceIds.map(async (invoiceId) => {
+      const invoiceDoc = await admin.firestore().collection('invoices').doc(invoiceId).get();
+      if (!invoiceDoc.exists) {
+        return { id: invoiceId, error: 'Invoice not found' };
+      }
+      
+      const invoiceData = invoiceDoc.data();
+      
+      // Verify invoice belongs to the hall owner
+      if (invoiceData.hallOwnerId !== actualHallOwnerId) {
+        return { id: invoiceId, error: 'Access denied' };
+      }
+      
+      // Check if invoice is eligible for reminders
+      if (!['SENT', 'OVERDUE', 'PARTIAL'].includes(invoiceData.status)) {
+        return { id: invoiceId, error: `Invoice status '${invoiceData.status}' is not eligible for reminders` };
+      }
+      
+      return { id: invoiceId, data: invoiceData };
+    });
+
+    const invoiceResults = await Promise.all(invoicePromises);
+    
+    // Separate successful and failed invoices
+    const validInvoices = invoiceResults.filter(result => !result.error);
+    const failedInvoices = invoiceResults.filter(result => result.error);
+    
+    console.log('Send reminders - Valid invoices:', validInvoices.length);
+    console.log('Send reminders - Failed invoices:', failedInvoices.length);
+
+    if (validInvoices.length === 0) {
+      return res.status(400).json({
+        message: 'No valid invoices found for reminders',
+        errors: failedInvoices.map(inv => ({ id: inv.id, error: inv.error }))
+      });
+    }
+
+    // Send reminder emails
+    const emailPromises = validInvoices.map(async (invoiceResult) => {
+      try {
+        const invoiceData = invoiceResult.data;
+        
+        // Convert Firestore timestamps to Date objects
+        const processedInvoiceData = {
+          ...invoiceData,
+          issueDate: invoiceData.issueDate?.toDate?.() || new Date(),
+          dueDate: invoiceData.dueDate?.toDate?.() || new Date(),
+          sentAt: invoiceData.sentAt?.toDate?.() || null,
+          createdAt: invoiceData.createdAt?.toDate?.() || new Date(),
+          updatedAt: invoiceData.updatedAt?.toDate?.() || new Date()
+        };
+        
+        await emailService.sendInvoiceReminderEmail(processedInvoiceData);
+        
+        // Update invoice with reminder sent timestamp
+        await admin.firestore().collection('invoices').doc(invoiceResult.id).update({
+          lastReminderSent: admin.firestore.FieldValue.serverTimestamp(),
+          reminderCount: admin.firestore.FieldValue.increment(1),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+        
+        console.log(`✅ Reminder sent successfully for invoice ${invoiceData.invoiceNumber}`);
+        return { id: invoiceResult.id, success: true };
+      } catch (error) {
+        console.error(`❌ Failed to send reminder for invoice ${invoiceResult.id}:`, error);
+        return { id: invoiceResult.id, error: error.message };
+      }
+    });
+
+    const emailResults = await Promise.all(emailPromises);
+    
+    // Count successful and failed emails
+    const sentCount = emailResults.filter(result => result.success).length;
+    const failedCount = emailResults.filter(result => result.error).length;
+    
+    console.log(`Send reminders completed - Sent: ${sentCount}, Failed: ${failedCount}`);
+
+    // Log the reminder sending activity
+    const AuditService = require('../services/auditService');
+    await AuditService.logInvoiceRemindersSent(
+      userId,
+      req.user.email,
+      userData.role,
+      {
+        invoiceIds: validInvoices.map(inv => inv.id),
+        sentCount: sentCount,
+        failedCount: failedCount,
+        totalRequested: invoiceIds.length
+      },
+      ipAddress,
+      actualHallOwnerId
+    );
+
+    res.json({
+      message: `Reminders processed successfully`,
+      sentCount: sentCount,
+      failedCount: failedCount,
+      totalRequested: invoiceIds.length,
+      errors: [
+        ...failedInvoices.map(inv => ({ id: inv.id, error: inv.error })),
+        ...emailResults.filter(result => result.error).map(result => ({ id: result.id, error: result.error }))
+      ]
+    });
+
+  } catch (error) {
+    console.error('Error sending invoice reminders:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
 // GET /api/invoices/:id/pdf - Generate and download invoice PDF
 router.get('/:id/pdf', verifyToken, async (req, res) => {
   try {

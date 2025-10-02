@@ -1001,6 +1001,242 @@ class EmailService {
     `;
   }
 
+  async sendInvoiceReminderEmail(invoiceData) {
+    try {
+      const subject = `Payment Reminder - Invoice ${invoiceData.invoiceNumber}`;
+      
+      // Enhanced message with deposit information
+      let message = `Dear ${invoiceData.customer.name},\n\nThis is a friendly reminder that your invoice ${invoiceData.invoiceNumber} is ${invoiceData.status === 'OVERDUE' ? 'overdue' : 'due for payment'}.\n\nInvoice Details:\n- Invoice Number: ${invoiceData.invoiceNumber}\n- Issue Date: ${new Date(invoiceData.issueDate).toLocaleDateString()}\n- Due Date: ${new Date(invoiceData.dueDate).toLocaleDateString()}\n- Invoice Type: ${invoiceData.invoiceType}\n- Booking Source: ${invoiceData.bookingSource || 'Direct'}`;
+      
+      // Add quotation information if applicable
+      if (invoiceData.bookingSource === 'quotation' && invoiceData.quotationId) {
+        message += `\n- Quotation ID: ${invoiceData.quotationId}`;
+      }
+      
+      // Add deposit and final price information
+      if (invoiceData.depositPaid > 0) {
+        message += `\n\n💰 PAYMENT BREAKDOWN:\n- Subtotal: $${invoiceData.subtotal.toFixed(2)} AUD\n- GST (10%): $${invoiceData.gst.toFixed(2)} AUD\n- Total Amount: $${invoiceData.total.toFixed(2)} AUD\n- 💰 Deposit Already Paid: $${invoiceData.depositPaid.toFixed(2)} AUD\n\n💳 AMOUNT YOU NEED TO PAY: $${invoiceData.finalTotal.toFixed(2)} AUD\n\nCalculation: $${invoiceData.total.toFixed(2)} - $${invoiceData.depositPaid.toFixed(2)} = $${invoiceData.finalTotal.toFixed(2)} AUD`;
+      } else {
+        message += `\n\n💳 AMOUNT YOU NEED TO PAY: $${invoiceData.total.toFixed(2)} AUD`;
+      }
+      
+      // Add urgency based on status
+      if (invoiceData.status === 'OVERDUE') {
+        const daysOverdue = Math.ceil((new Date() - new Date(invoiceData.dueDate)) / (1000 * 60 * 60 * 24));
+        message += `\n\n⚠️ URGENT: This invoice is ${daysOverdue} day(s) overdue. Please arrange payment as soon as possible to avoid additional charges.`;
+      } else if (invoiceData.status === 'PARTIAL') {
+        const balanceDue = invoiceData.total - invoiceData.paidAmount;
+        message += `\n\n📋 PARTIAL PAYMENT: Thank you for your partial payment. The remaining balance of $${balanceDue.toFixed(2)} AUD is still due.`;
+      } else {
+        message += `\n\n⏰ Payment is due within 30 days of the invoice date. Please refer to the attached PDF for payment details and bank information.`;
+      }
+      
+      message += `\n\nIf you have already made payment, please ignore this reminder. If you have any questions or need to discuss payment arrangements, please contact us directly.\n\nThank you for your prompt attention to this matter!`;
+
+      const mailOptions = {
+        from: 'pawankanchana34741@gmail.com',
+        to: invoiceData.customer.email,
+        subject: subject,
+        html: this.generateInvoiceReminderHTMLTemplate(invoiceData),
+        text: message
+      };
+
+      const result = await this.transporter.sendMail(mailOptions);
+      console.log('✅ Invoice reminder email sent successfully:', result.messageId);
+      return result;
+    } catch (error) {
+      console.error('❌ Failed to send invoice reminder email:', error);
+      throw error;
+    }
+  }
+
+  generateInvoiceReminderHTMLTemplate(invoiceData) {
+    const logoUrl = 'https://via.placeholder.com/200x80/4F46E5/FFFFFF?text=Cranbourne+Hall';
+    const isOverdue = invoiceData.status === 'OVERDUE';
+    const daysOverdue = isOverdue ? Math.ceil((new Date() - new Date(invoiceData.dueDate)) / (1000 * 60 * 60 * 24)) : 0;
+    
+    return `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Cranbourne Public Hall - Payment Reminder</title>
+      </head>
+      <body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f1f5f9;">
+        <div style="max-width: 600px; margin: 0 auto; background-color: white; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+          <!-- Header -->
+          <div style="background: linear-gradient(135deg, ${isOverdue ? '#dc2626' : '#f59e0b'} 0%, ${isOverdue ? '#b91c1c' : '#d97706'} 100%); padding: 40px 20px; text-align: center;">
+            <img src="${logoUrl}" alt="Cranbourne Public Hall" style="max-width: 200px; height: auto;">
+            <h1 style="color: white; margin: 20px 0 0 0; font-size: 24px; font-weight: 600;">Cranbourne Public Hall</h1>
+          </div>
+          
+          <!-- Content -->
+          <div style="padding: 40px 30px;">
+            <h2 style="color: #1e293b; margin: 0 0 20px 0; font-size: 28px; font-weight: 700;">
+              ${isOverdue ? '🚨 Payment Overdue' : '⏰ Payment Reminder'}
+            </h2>
+            
+            <div style="color: #475569; line-height: 1.6; font-size: 16px; margin-bottom: 20px;">
+              Dear ${invoiceData.customer.name},
+            </div>
+            
+            <div style="color: #475569; line-height: 1.6; font-size: 16px; margin-bottom: 20px;">
+              This is a friendly reminder that your invoice <strong>${invoiceData.invoiceNumber}</strong> is ${isOverdue ? 'overdue' : 'due for payment'}.
+            </div>
+            
+            ${isOverdue ? `
+            <div style="background-color: #fef2f2; border: 2px solid #dc2626; border-radius: 8px; padding: 20px; margin: 20px 0;">
+              <h3 style="color: #dc2626; margin: 0 0 10px 0; font-size: 18px;">⚠️ URGENT: Invoice Overdue</h3>
+              <p style="color: #991b1b; margin: 0; font-weight: bold;">
+                This invoice is ${daysOverdue} day(s) overdue. Please arrange payment as soon as possible to avoid additional charges.
+              </p>
+            </div>
+            ` : ''}
+            
+            <div style="background-color: #f8fafc; padding: 20px; border-radius: 8px; margin: 20px 0;">
+              <h3 style="color: #1e293b; margin: 0 0 15px 0;">Invoice Details</h3>
+              <table style="width: 100%; border-collapse: collapse;">
+                <tr>
+                  <td style="padding: 8px 0; color: #64748b; font-weight: bold;">Invoice Number:</td>
+                  <td style="padding: 8px 0; color: #1e293b;">${invoiceData.invoiceNumber}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; color: #64748b; font-weight: bold;">Issue Date:</td>
+                  <td style="padding: 8px 0; color: #1e293b;">${new Date(invoiceData.issueDate).toLocaleDateString()}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; color: #64748b; font-weight: bold;">Due Date:</td>
+                  <td style="padding: 8px 0; color: ${isOverdue ? '#dc2626' : '#1e293b'};">${new Date(invoiceData.dueDate).toLocaleDateString()}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; color: #64748b; font-weight: bold;">Invoice Type:</td>
+                  <td style="padding: 8px 0; color: #1e293b;">${invoiceData.invoiceType}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; color: #64748b; font-weight: bold;">Booking Source:</td>
+                  <td style="padding: 8px 0; color: #1e293b;">${invoiceData.bookingSource || 'Direct'}</td>
+                </tr>
+                ${invoiceData.bookingSource === 'quotation' && invoiceData.quotationId ? `
+                <tr>
+                  <td style="padding: 8px 0; color: #64748b; font-weight: bold;">Quotation ID:</td>
+                  <td style="padding: 8px 0; color: #1e293b;">${invoiceData.quotationId}</td>
+                </tr>
+                ` : ''}
+              </table>
+            </div>
+            
+            <!-- Payment Breakdown -->
+            <div style="background-color: #f0f9ff; border: 1px solid #0ea5e9; border-radius: 8px; padding: 20px; margin: 20px 0;">
+              <h3 style="color: #0c4a6e; margin: 0 0 15px 0;">Payment Breakdown</h3>
+              <table style="width: 100%; border-collapse: collapse;">
+                <tr>
+                  <td style="padding: 8px 0; color: #64748b; font-weight: bold;">Subtotal:</td>
+                  <td style="padding: 8px 0; color: #1e293b; text-align: right;">$${invoiceData.subtotal.toFixed(2)}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; color: #64748b; font-weight: bold;">GST (10%):</td>
+                  <td style="padding: 8px 0; color: #1e293b; text-align: right;">$${invoiceData.gst.toFixed(2)}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; color: #64748b; font-weight: bold;">Total Amount:</td>
+                  <td style="padding: 8px 0; color: #1e293b; text-align: right;">$${invoiceData.total.toFixed(2)}</td>
+                </tr>
+                ${invoiceData.depositPaid > 0 ? `
+                <tr style="background-color: #dbeafe;">
+                  <td style="padding: 12px 8px; color: #1e40af; font-weight: bold; font-size: 16px;">💰 Deposit Already Paid:</td>
+                  <td style="padding: 12px 8px; color: #1e40af; font-weight: bold; font-size: 16px; text-align: right;">-$${invoiceData.depositPaid.toFixed(2)} AUD</td>
+                </tr>
+                <tr style="background-color: #dcfce7; border: 2px solid #22c55e;">
+                  <td style="padding: 15px 8px; color: #166534; font-weight: bold; font-size: 20px;">💳 Amount You Need to Pay:</td>
+                  <td style="padding: 15px 8px; color: #166534; font-weight: bold; font-size: 20px; text-align: right;">$${invoiceData.finalTotal.toFixed(2)} AUD</td>
+                </tr>
+                ` : `
+                <tr style="background-color: #dcfce7; border: 2px solid #22c55e;">
+                  <td style="padding: 15px 8px; color: #166534; font-weight: bold; font-size: 20px;">💳 Amount Due:</td>
+                  <td style="padding: 15px 8px; color: #166534; font-weight: bold; font-size: 20px; text-align: right;">$${invoiceData.total.toFixed(2)} AUD</td>
+                </tr>
+                `}
+              </table>
+            </div>
+            
+            ${invoiceData.status === 'PARTIAL' ? `
+            <div style="background-color: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: 20px; margin: 20px 0;">
+              <h3 style="color: #92400e; margin: 0 0 15px 0;">📋 Partial Payment Received</h3>
+              <p style="color: #92400e; margin: 0;">
+                Thank you for your partial payment of $${invoiceData.paidAmount.toFixed(2)} AUD. 
+                The remaining balance of $${(invoiceData.total - invoiceData.paidAmount).toFixed(2)} AUD is still due.
+              </p>
+            </div>
+            ` : ''}
+            
+            ${invoiceData.bookingSource === 'quotation' && invoiceData.quotationId ? `
+            <div style="background-color: #fef3c7; border: 2px solid #f59e0b; border-radius: 8px; padding: 20px; margin: 20px 0;">
+              <h3 style="color: #92400e; margin: 0 0 15px 0; font-size: 18px;">📋 Quotation Information</h3>
+              <div style="color: #92400e; font-size: 14px; line-height: 1.6;">
+                <p style="margin: 0 0 10px 0;">This invoice is based on your accepted quotation <strong>${invoiceData.quotationId}</strong>.</p>
+                ${invoiceData.depositPaid > 0 ? `
+                <div style="background-color: #dbeafe; border: 1px solid #3b82f6; border-radius: 6px; padding: 12px; margin: 10px 0;">
+                  <p style="margin: 0 0 8px 0; color: #1e40af; font-weight: bold;">💰 Deposit Information:</p>
+                  <p style="margin: 0 0 8px 0; color: #1e40af;">Your deposit of <strong>$${invoiceData.depositPaid.toFixed(2)} AUD</strong> has been deducted from the total amount.</p>
+                </div>
+                <div style="background-color: #dcfce7; border: 2px solid #22c55e; border-radius: 6px; padding: 12px; margin: 10px 0;">
+                  <p style="margin: 0; color: #166534; font-weight: bold; font-size: 16px;">💳 Amount You Need to Pay: <strong>$${invoiceData.finalTotal.toFixed(2)} AUD</strong></p>
+                </div>
+                ` : `
+                <div style="background-color: #dcfce7; border: 2px solid #22c55e; border-radius: 6px; padding: 12px; margin: 10px 0;">
+                  <p style="margin: 0; color: #166534; font-weight: bold; font-size: 16px;">💳 Amount You Need to Pay: <strong>$${invoiceData.total.toFixed(2)} AUD</strong></p>
+                </div>
+                `}
+              </div>
+            </div>
+            ` : ''}
+            
+            <div style="background-color: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: 20px; margin: 20px 0;">
+              <h3 style="color: #92400e; margin: 0 0 15px 0;">Payment Information</h3>
+              <div style="color: #92400e; font-size: 14px; line-height: 1.6;">
+                <p style="margin: 0 0 10px 0;"><strong>Payment Method:</strong> Bank Transfer</p>
+                <p style="margin: 0 0 10px 0;"><strong>Account Name:</strong> Cranbourne Public Hall</p>
+                <p style="margin: 0 0 10px 0;"><strong>BSB:</strong> 123-456</p>
+                <p style="margin: 0;"><strong>Account Number:</strong> 12345678</p>
+              </div>
+            </div>
+            
+            <div style="text-align: center; margin: 30px 0;">
+              <p style="color: #64748b; margin-bottom: 20px;">
+                ${isOverdue ? 'Please arrange payment immediately to avoid additional charges.' : 'Payment is due within 30 days of the invoice date.'}
+              </p>
+              <a href="mailto:pawankanchana34741@gmail.com" 
+                 style="background-color: ${isOverdue ? '#dc2626' : '#4f46e5'}; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">
+                ${isOverdue ? 'Contact Us Urgently' : 'Contact Us'}
+              </a>
+            </div>
+            
+            <div style="border-top: 1px solid #e2e8f0; margin-top: 40px; padding-top: 30px; text-align: center;">
+              <p style="color: #64748b; font-size: 14px; margin: 0 0 10px 0;">
+                If you have already made payment, please ignore this reminder.
+              </p>
+              <p style="color: #64748b; font-size: 14px; margin: 0;">
+                If you have any questions or need to discuss payment arrangements, please contact us directly.
+              </p>
+            </div>
+          </div>
+          
+          <!-- Footer -->
+          <div style="background-color: #f8fafc; padding: 30px; text-align: center; border-top: 1px solid #e2e8f0;">
+            <p style="color: #64748b; font-size: 12px; margin: 0 0 10px 0;">
+              Cranbourne Public Hall Management System
+            </p>
+            <p style="color: #64748b; font-size: 12px; margin: 0;">
+              Payment reminder sent on ${new Date().toLocaleDateString('en-AU')}
+            </p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+  }
+
   async sendTestEmail(toEmail) {
     try {
       const testNotification = {
